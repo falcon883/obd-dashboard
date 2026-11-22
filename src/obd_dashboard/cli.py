@@ -1,4 +1,4 @@
-"""Command line: `obd-dashboard` (web UI), `obd-dashboard log` (terminal only), `test`, `ports`."""
+"""Command line: `obd-dashboard` (web UI), `log` (terminal only), `garage`, `support`, `test`, `ports`."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import List, Optional
 from obd_dashboard import __version__
 from obd_dashboard.settings import Settings
 
-COMMANDS = {"serve", "log", "test", "ports"}
+COMMANDS = {"serve", "log", "test", "ports", "garage", "support"}
 
 
 def _session_args(p: argparse.ArgumentParser) -> None:
@@ -53,6 +53,13 @@ def build_parser() -> argparse.ArgumentParser:
     garage.add_argument("name", nargs="*", help="new nickname (for rename)")
     garage.add_argument("--output-dir", type=Path, default=Path("logs"))
 
+    support = sub.add_parser(
+        "support", parents=[common], help="write an anonymous adapter/car report to attach to a bug report"
+    )
+    support.add_argument("--com", default=None)
+    support.add_argument("--baud", type=int, default=0)
+    support.add_argument("--out", type=Path, default=None, help="file to write (default: obd-support-<time>.json)")
+
     sub.add_parser("ports", parents=[common], help="list serial ports")
     return ap
 
@@ -92,6 +99,12 @@ def _test(a: argparse.Namespace) -> int:
     from obd_dashboard.diagnose import run
 
     return run(a.com, a.baud)
+
+
+def _support(a: argparse.Namespace) -> int:
+    from obd_dashboard.support import run
+
+    return run(a.com, a.baud, a.out)
 
 
 def _garage(a: argparse.Namespace) -> int:
@@ -144,5 +157,5 @@ def main(argv: Optional[List[str]] = None) -> int:
         format="%(asctime)s %(levelname)-7s %(message)s", datefmt="%H:%M:%S",
     )  # fmt: skip
     logging.getLogger("pint").setLevel(logging.ERROR)  # python-obd's unit library is noisy on import
-    handlers = {"serve": _serve, "log": _log, "test": _test, "ports": _ports, "garage": _garage}
+    handlers = {"serve": _serve, "log": _log, "test": _test, "ports": _ports, "garage": _garage, "support": _support}
     return handlers[parsed.command or "serve"](parsed)

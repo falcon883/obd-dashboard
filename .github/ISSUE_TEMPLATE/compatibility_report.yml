@@ -1,0 +1,48 @@
+name: Compatibility report
+description: Tell us how it worked (or not) on your car
+labels: [compatibility]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the most useful thing you can send. Run `obd-dashboard support` first and attach the file.
+  - type: input
+    id: car
+    attributes:
+      label: Car (year, make, model, engine)
+      placeholder: "2016 Hyundai Sonata SE 2.4 GDI"
+    validations:
+      required: true
+  - type: input
+    id: adapter
+    attributes:
+      label: Adapter (brand, USB or Bluetooth, chip if you know it)
+      placeholder: "Generic ELM327 v1.5 USB, CH340"
+    validations:
+      required: true
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      options:
+        - Works fine
+        - Works, some sensors are missing or wrong
+        - Connects but shows no data
+        - Does not connect
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and app version
+      placeholder: "Windows 11, 1.0.0"
+  - type: textarea
+    id: support
+    attributes:
+      label: Support file
+      description: Drag the `obd-support-*.json` file here.
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: Which sensors looked right or wrong, anything odd.

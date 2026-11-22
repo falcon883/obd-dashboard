@@ -1,0 +1,42 @@
+name: Bug report
+description: Something does not work or shows wrong data
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks. Please run `obd-dashboard support` (adapter plugged in, ignition ON) and attach the file it writes.
+        It has no full VIN, serial numbers or location, and you can open it and check before sharing.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what did you see instead? Screenshots help.
+    validations:
+      required: true
+  - type: textarea
+    id: support
+    attributes:
+      label: Support file
+      description: Drag the `obd-support-*.json` file here. If you could not create it, say why.
+  - type: input
+    id: car
+    attributes:
+      label: Car
+      placeholder: "2016 Hyundai Sonata 2.4 GDI"
+  - type: input
+    id: adapter
+    attributes:
+      label: Adapter
+      placeholder: "ELM327 v1.5 USB (CH340)"
+  - type: input
+    id: version
+    attributes:
+      label: App version and OS
+      placeholder: "1.0.0, Windows 11, Python 3.12"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Terminal output
+      description: Anything the terminal printed (run with `-v` for more). Remove anything private.
+      render: text

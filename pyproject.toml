@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,6 +7,24 @@ name = "obd-dashboard"
 version = "1.0.0"
 description = "Live OBD-II dashboard and logger for ELM327 adapters (read-only)"
 readme = "README.md"
+license = "GPL-2.0-only"
+license-files = ["LICENSE"]
+authors = [{ name = "Durvank Deorukhkar" }]
+keywords = ["obd2", "obd-ii", "elm327", "car", "diagnostics", "dashboard", "logger", "vehicle"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Monitoring",
+    "Topic :: Utilities",
+]
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.110",
@@ -18,6 +36,11 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "httpx>=0.27", "ruff>=0.5", "mypy>=1.8"]
+
+[project.urls]
+Homepage = "https://github.com/falcon883/obd-dashboard"
+Issues = "https://github.com/falcon883/obd-dashboard/issues"
+Changelog = "https://github.com/falcon883/obd-dashboard/blob/main/CHANGELOG.md"
 
 [project.scripts]
 obd-dashboard = "obd_dashboard.cli:main"
