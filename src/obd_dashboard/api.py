@@ -19,6 +19,7 @@ from serial.tools import list_ports
 from obd_dashboard.garage import Garage
 from obd_dashboard.hub import Hub, SessionBusy
 from obd_dashboard.settings import Settings
+from obd_dashboard.userconfig import ConfigError, UserConfig
 
 BUNDLED_UI = Path(__file__).parent / "static"
 PING_EVERY = 15.0
@@ -41,6 +42,16 @@ class Ack(BaseModel):
 
 class RenameRequest(BaseModel):
     nickname: str = Field(max_length=60)
+
+
+class SettingsUpdate(BaseModel):
+    values: Dict[str, Any]
+    vin: Optional[str] = Field(default=None, description="Save as this car's own limits; omit for all cars")
+
+
+class ResetRequest(BaseModel):
+    scope: str = Field(pattern=r"^(thresholds|advanced|all)$")
+    vin: Optional[str] = None
 
 
 class PortInfo(BaseModel):
@@ -127,6 +138,43 @@ def create_app(settings: Settings, hub: Optional[Hub] = None) -> FastAPI:
         if path is None:
             raise HTTPException(status_code=404, detail="No such file")
         return FileResponse(path, filename=name)
+
+    config = UserConfig(settings.output_dir)
+
+    def settings_view() -> Dict[str, Any]:
+        cars = [{"vin": c.vin, "name": c.display_name} for c in garage.cars()]
+        return {**config.snapshot(cars), "running": hub.running}
+
+    def known_car(vin: Optional[str]) -> None:
+        if vin is not None and not (garage.valid_key(vin) and garage.load(vin)):
+            raise HTTPException(status_code=404, detail="Unknown car")
+
+    @app.get("/api/settings")
+    def get_settings() -> Dict[str, Any]:
+        return settings_view()
+
+    @app.put("/api/settings/thresholds")
+    def put_thresholds(req: SettingsUpdate) -> Dict[str, Any]:
+        known_car(req.vin)
+        try:
+            config.set_thresholds(req.values, req.vin)
+        except ConfigError as exc:
+            raise HTTPException(status_code=422, detail=exc.problems) from exc
+        return settings_view()
+
+    @app.put("/api/settings/advanced")
+    def put_advanced(req: SettingsUpdate) -> Dict[str, Any]:
+        try:
+            config.set_advanced(req.values)
+        except ConfigError as exc:
+            raise HTTPException(status_code=422, detail=exc.problems) from exc
+        return settings_view()
+
+    @app.post("/api/settings/reset")
+    def reset_settings(req: ResetRequest) -> Dict[str, Any]:
+        known_car(req.vin)
+        config.reset(req.scope, req.vin)
+        return settings_view()
 
     @app.get("/api/stream")
     async def stream(request: Request) -> StreamingResponse:

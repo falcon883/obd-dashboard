@@ -76,8 +76,8 @@ export function Tile({ label, value, unit, sub, bar, color }) {
   )
 }
 
-export function Vitals({ last, U }) {
-  const checks = useMemo(() => (last ? buildChecks(last.values, last, U) : []), [last, U])
+export function Vitals({ last, U, limits }) {
+  const checks = useMemo(() => (last ? buildChecks(last.values, last, U, limits) : []), [last, U, limits])
   return (
     <div className="card">
       <div className="card-title">Vitals</div>

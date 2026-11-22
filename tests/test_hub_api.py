@@ -224,3 +224,46 @@ def test_demo_reports_a_car(client):
     assert wait_for(lambda: client.get("/api/state").json()["info"] is not None)
     assert client.get("/api/state").json()["info"]["car"]["display_name"] == "2016 Hyundai Sonata"
     client.post("/api/stop")
+
+
+def test_settings_roundtrip_and_validation(client, settings):
+    body = client.get("/api/settings").json()
+    assert body["thresholds"] == body["defaults"] and body["running"] is False
+    assert {f["key"] for f in body["schema"]["thresholds"]} == set(body["defaults"])
+
+    saved = client.put("/api/settings/thresholds", json={"values": {"coolant_warn_c": 99}}).json()
+    assert saved["thresholds"]["coolant_warn_c"] == 99 and saved["defaults"]["coolant_warn_c"] == 102
+    assert client.get("/api/settings").json()["thresholds"]["coolant_warn_c"] == 99
+
+    bad = client.put("/api/settings/thresholds", json={"values": {"coolant_warn_c": 500, "nope": 1}})
+    assert bad.status_code == 422 and len(bad.json()["detail"]) == 2
+    assert client.get("/api/settings").json()["thresholds"]["coolant_warn_c"] == 99  # untouched by the bad request
+
+    assert client.put("/api/settings/advanced", json={"values": {"beep": False}}).json()["advanced"]["beep"] is False
+    assert client.put("/api/settings/advanced", json={"values": {"beep": 3}}).status_code == 422
+
+    reset = client.post("/api/settings/reset", json={"scope": "all"}).json()
+    assert reset["thresholds"] == reset["defaults"] and reset["advanced"] == reset["advanced_defaults"]
+    assert client.post("/api/settings/reset", json={"scope": "bogus"}).status_code == 422
+
+
+def test_per_car_limits_need_a_known_car(client, settings):
+    from obd_dashboard.garage import Garage
+
+    vin = "5NPE24AF3GH283081"
+    assert client.put("/api/settings/thresholds", json={"values": {}, "vin": vin}).status_code == 404
+    Garage(settings.output_dir).register(vin)
+    r = client.put("/api/settings/thresholds", json={"values": {"fuel_low_pct": 25}, "vin": vin}).json()
+    assert r["cars"][0]["vin"] == vin and r["cars"][0]["overrides"] == {"fuel_low_pct": 25}
+    assert r["thresholds"]["fuel_low_pct"] == 10  # the global value did not move
+    assert client.put("/api/settings/thresholds", json={"values": {}, "vin": "../etc"}).status_code == 404
+    after = client.post("/api/settings/reset", json={"scope": "thresholds", "vin": vin}).json()
+    assert after["cars"][0]["overrides"] == {}
+
+
+def test_demo_uses_saved_limits(client):
+    client.put("/api/settings/thresholds", json={"values": {"coolant_warn_c": 95, "fuel_low_pct": 12}})
+    client.post("/api/start", json={"demo": True})
+    assert wait_for(lambda: client.get("/api/state").json()["info"] is not None)
+    assert client.get("/api/state").json()["info"]["thresholds"]["coolant_warn_c"] == 95
+    client.post("/api/stop")

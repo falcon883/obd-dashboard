@@ -6,9 +6,11 @@ import datetime
 import math
 import random
 import threading
+from dataclasses import asdict
 from typing import Any, Dict, List, Optional, Tuple
 
 from obd_dashboard.types import Sink
+from obd_dashboard.userconfig import DEFAULT_THRESHOLDS, Thresholds
 
 # (name, description, unit, polled every loop)
 DEMO_SENSORS: List[Tuple[str, str, Optional[str], bool]] = [
@@ -118,10 +120,13 @@ class DemoCar:
         }  # fmt: skip
 
 
-def run_demo(sink: Sink, stop: threading.Event, tick: float = 1.0, seed: int = 7) -> None:
+def run_demo(
+    sink: Sink, stop: threading.Event, tick: float = 1.0, seed: int = 7, limits: Thresholds = DEFAULT_THRESHOLDS
+) -> None:
     sink.on_status("connected", "Demo mode - simulated car")
     sink.on_info({
-        "car": DEMO_CAR, "port": "DEMO", "baud": 0, "protocol": "Simulated (no hardware)", "csv": None, "report": None,
+        "car": DEMO_CAR, "thresholds": asdict(limits), "port": "DEMO", "baud": 0,
+        "protocol": "Simulated (no hardware)", "csv": None, "report": None,
         "static": {"VIN": "DEMO-VIN-0000000", "FUEL_TYPE": "Gasoline", "WARMUPS_SINCE_DTC_CLEAR": "42"},
         "units": {n: u for n, _, u, _ in DEMO_SENSORS if u}, "misfire0": 3.0,
         "sensors": [{"name": n, "desc": d, "fast": f} for n, d, _, f in DEMO_SENSORS],

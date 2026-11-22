@@ -6,6 +6,7 @@ import datetime
 import logging
 import threading
 import time
+from dataclasses import asdict, replace
 from typing import Any, Callable, Dict, List, Optional
 
 from obd_dashboard import __version__, connection, readers
@@ -13,9 +14,10 @@ from obd_dashboard.garage import VERDICTS, Car, Garage
 from obd_dashboard.notify import beep
 from obd_dashboard.readers import C, SensorPlan, fmt_monitors, fmt_supported
 from obd_dashboard.report import SessionFiles, Stat, SummaryData, column_name, csv_fields, render_summary
-from obd_dashboard.rules import RUNNING_RPM, RuleState, evaluate
+from obd_dashboard.rules import RuleState, evaluate
 from obd_dashboard.settings import Settings
 from obd_dashboard.types import LEVEL_RANK, Alert, BaseSink, Codes, EventPayload, RowPayload, Sink
+from obd_dashboard.userconfig import DEFAULT_THRESHOLDS, TUNING_KEYS, UserConfig
 from obd_dashboard.vin import CarInfo, decode_nhtsa, normalize_vin
 
 log = logging.getLogger(__name__)
@@ -69,11 +71,18 @@ class Session:
         vin_lookup: Callable[[str], Optional[CarInfo]] = decode_nhtsa,
     ) -> None:
         self.cfg = settings
-        self.tune = settings.tuning
+        # Options saved from the Settings screen. Anything never changed there leaves `settings` untouched,
+        # and a command-line switch that turns something off still wins.
+        self.config = UserConfig(settings.output_dir)
+        saved = self.config.advanced()
+        changed = self.config.advanced_overrides()
+        self.tune = replace(settings.tuning, **{k: changed[k] for k in TUNING_KEYS if k in changed})
+        self._lookup_vin = settings.lookup_vin and bool(saved["lookup_vin"])
+        beep_on = settings.beep and bool(saved["beep"])
         self.sink = SafeSink(sink)
         self.stop = stop or threading.Event()
         self._connector = connector
-        self._notify = notifier if notifier is not None else (beep if settings.beep else (lambda _l: None))
+        self._notify = notifier if notifier is not None else (beep if beep_on else (lambda _l: None))
         self._clock = clock
         self._vin_lookup = vin_lookup
         self.garage = Garage(settings.output_dir)
@@ -87,6 +96,7 @@ class Session:
         self.baud = 0
         self.plan = SensorPlan()
         self.files: Optional[SessionFiles] = None
+        self.limits = DEFAULT_THRESHOLDS  # replaced once we know which car this is
         self.state = RuleState()
         self.readings: Dict[str, Any] = {}
         self.units: Dict[str, str] = {}
@@ -141,7 +151,9 @@ class Session:
             log.warning("VIN not readable (%r): logging under '%s'", self.static_start.get("VIN"), "unknown-car")
         self.car = self.garage.register(vin)
         log.info("Car: %s%s", self.car.display_name, f" ({vin})" if vin else "")
-        if vin and self.cfg.lookup_vin and not self.car.model:
+        self.limits = self.config.thresholds(vin)  # defaults + your global edits + this car's edits
+        self.state = RuleState.for_limits(self.limits)
+        if vin and self._lookup_vin and not self.car.model:
             self._lookup_pending = True
             threading.Thread(target=self._lookup_worker, args=(vin,), daemon=True, name="vin-lookup").start()
 
@@ -167,6 +179,8 @@ class Session:
         adapter = readers.query(conn, C.ELM_VERSION)
         files.log(f"Adapter: {adapter.value if not adapter.is_null() else 'unknown'}")
         files.log(f"Car: {self.car.display_name} | VIN {self.car.vin or 'unknown'}")
+        custom = {k: v for k, v in asdict(self.limits).items() if v != getattr(DEFAULT_THRESHOLDS, k)}
+        files.log("Alert limits: " + (", ".join(f"{k}={v:g}" for k, v in custom.items()) or "defaults"))
 
         files.log("\n=== SUPPORTED COMMANDS (what this car reports) ===")
         files.log_lines(fmt_supported(conn))
@@ -201,7 +215,8 @@ class Session:
     def _info(self) -> Dict[str, Any]:
         files = self._files()
         return {
-            "car": self.car.to_dict(), "port": self.port, "baud": self.baud, "protocol": self.conn.protocol_name(),
+            "car": self.car.to_dict(), "thresholds": asdict(self.limits),
+            "port": self.port, "baud": self.baud, "protocol": self.conn.protocol_name(),
             "csv": str(files.csv_path), "report": str(files.report_path),
             "static": {k: str(v) for k, v in self.static_start.items()},
             "units": dict(self.units), "misfire0": self.state.misfire0,
@@ -276,7 +291,7 @@ class Session:
     def _update_state(self) -> None:
         now, st = self._clock(), self.state
         rpm, spd, cool = self._reading("RPM"), self._reading("SPEED"), self._reading("COOLANT_TEMP")
-        if rpm is not None and rpm > RUNNING_RPM and st.run_start is None:
+        if rpm is not None and rpm > self.limits.running_rpm and st.run_start is None:
             st.run_start = now
         if spd is not None and spd > DRIVING_KPH:
             st.drove = True
@@ -306,7 +321,7 @@ class Session:
 
     def _check_alerts(self) -> Dict[str, Alert]:
         """Raise an event when a problem first appears or gets worse; clear it silently."""
-        now_active = evaluate(self.readings, self.state, self._clock())
+        now_active = evaluate(self.readings, self.state, self._clock(), self.limits)
         for topic, alert in now_active.items():
             previous = self.active.get(topic)
             if previous is None or previous.level != alert.level:

@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { buildChecks, carLine, fmt, fmtDuration, fmtStamp, makeUnits, parseStamp } from './format.js'
+import {
+  DEFAULT_LIMITS,
+  buildChecks,
+  carLine,
+  fmt,
+  fmtDuration,
+  fmtStamp,
+  limitsOf,
+  makeUnits,
+  parseStamp,
+} from './format.js'
 
 const U = makeUnits('metric')
 const byId = (checks, id) => checks.find((c) => c.id === id)
@@ -91,5 +101,33 @@ describe('car + session helpers', () => {
     expect(carLine({ display_name: 'Daily', title: '2016 Hyundai Sonata' })).toBe('Daily')
     expect(carLine({})).toBe('Unknown car')
     expect(carLine(null)).toBe('')
+  })
+})
+
+describe('limits come from the session, not from constants', () => {
+  it('limitsOf layers the session report over the defaults', () => {
+    expect(limitsOf(null)).toEqual(DEFAULT_LIMITS)
+    expect(limitsOf({ thresholds: { coolant_warn_c: 95 } })).toEqual({
+      ...DEFAULT_LIMITS,
+      coolant_warn_c: 95,
+    })
+  })
+
+  it('a stricter coolant limit changes the verdict for the same reading', () => {
+    const reading = { COOLANT_TEMP: 97 }
+    expect(byId(buildChecks(reading, null, U), 'coolant').status).toBe('ok')
+    const strict = limitsOf({ thresholds: { coolant_warn_c: 95, coolant_crit_c: 100 } })
+    expect(byId(buildChecks(reading, null, U, strict), 'coolant').status).toBe('warn')
+  })
+
+  it('catalyst, fuel and misfire limits are all honoured', () => {
+    const loose = limitsOf({ thresholds: { catalyst_warn_c: 1100, catalyst_crit_c: 1200, fuel_low_pct: 40 } })
+    const v = { CATALYST_TEMP_B1S1: 1010, FUEL_LEVEL: 30 }
+    expect(byId(buildChecks(v, null, U), 'cat').status).toBe('bad')
+    expect(byId(buildChecks(v, null, U, loose), 'cat').status).toBe('ok')
+    expect(byId(buildChecks(v, null, U, loose), 'fuel').status).toBe('warn')
+    const strictMisfire = limitsOf({ thresholds: { misfire_rise: 2 } })
+    const last = { misfire: { total: 6 }, misfire0: 3 }
+    expect(byId(buildChecks({}, last, U, strictMisfire), 'misfire').status).toBe('warn')
   })
 })

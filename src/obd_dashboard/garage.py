@@ -64,7 +64,8 @@ class Car:
         return cls(**known)
 
 
-def _atomic_write(path: Path, text: str) -> None:
+def atomic_write(path: Path, text: str) -> None:
+    """Write via a temp file so a crash or a second reader never sees half a file."""
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(text, encoding="utf-8")
     tmp.replace(path)
@@ -92,7 +93,7 @@ class Garage:
     def save(self, car: Car) -> None:
         folder = self.car_dir(car.vin)
         folder.mkdir(parents=True, exist_ok=True)
-        _atomic_write(folder / "car.json", json.dumps(asdict(car), indent=2) + "\n")
+        atomic_write(folder / "car.json", json.dumps(asdict(car), indent=2) + "\n")
 
     def register(self, vin: Optional[str]) -> Car:
         """Find or create this car's profile and mark it as seen now. Never overwrites user edits."""

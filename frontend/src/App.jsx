@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
 import useObdStream from './hooks/useObdStream.js'
 import { api } from './api.js'
-import { COLORS, carLine, fmt, fmtDuration, makeUnits } from './format.js'
+import { COLORS, carLine, fmt, fmtDuration, limitsOf, makeUnits } from './format.js'
 import Gauge from './components/Gauge.jsx'
 import LineChart from './components/LineChart.jsx'
 import Garage from './components/Garage.jsx'
+import Settings from './components/Settings.jsx'
 import StartCard from './components/StartCard.jsx'
 import {
   AlertBanner,
@@ -54,7 +55,9 @@ export default function App() {
   const { serverUp, status, info, rows, last, events } = useObdStream()
   const [sys, setSys] = useState(loadUnits)
   const [win, setWin] = useState(120)
+  const [view, setView] = useState('dashboard') // 'dashboard' | 'settings'
   const U = useMemo(() => makeUnits(sys), [sys])
+  const L = useMemo(() => limitsOf(info), [info])
   const running = RUNNING.includes(status.state)
   const v = last?.values || {}
   const overall = overallStatus(last)
@@ -68,31 +71,27 @@ export default function App() {
     }
   }
 
-  const engineOn = v.RPM != null && v.RPM > 400
+  const engineOn = v.RPM != null && v.RPM > L.running_rpm
   const cool = v.COOLANT_TEMP
   const coolSub =
     cool == null
       ? ''
-      : cool < 70
+      : cool < L.coolant_cold_c
         ? 'Warming up'
-        : cool >= 108
+        : cool >= L.coolant_crit_c
           ? 'Overheating'
-          : cool >= 102
+          : cool >= L.coolant_warn_c
             ? 'Running hot'
             : 'Normal'
-  const battZones = engineOn
-    ? [
-        { from: 10, to: 12, color: COLORS.bad },
-        { from: 12, to: 13, color: COLORS.warn },
-        { from: 13, to: 15, color: COLORS.ok },
-        { from: 15, to: 16.1, color: COLORS.warn },
-      ]
-    : [
-        { from: 10, to: 11.8, color: COLORS.bad },
-        { from: 11.8, to: 12.4, color: COLORS.warn },
-        { from: 12.4, to: 15, color: COLORS.ok },
-        { from: 15, to: 16.1, color: COLORS.warn },
-      ]
+  const coolMax = Math.max(120, L.coolant_crit_c + 12)
+  const lowV = engineOn ? L.battery_low_running_v : L.battery_low_off_v
+  const battZones = [
+    { from: 10, to: lowV - (engineOn ? 1 : 0.2), color: COLORS.bad },
+    { from: lowV - (engineOn ? 1 : 0.2), to: lowV, color: COLORS.warn },
+    { from: lowV, to: L.battery_high_running_v, color: COLORS.ok },
+    { from: L.battery_high_running_v, to: 16.1, color: COLORS.warn },
+  ]
+  const trimSpan = Math.max(15, Math.ceil(L.ltft_warn_pct + 5))
 
   const showStart = !running
   const hasData = !!last
@@ -154,6 +153,22 @@ export default function App() {
               °C · km/h
             </button>
           </div>
+          <button
+            className={`btn ghost icon-btn${view === 'settings' ? ' on' : ''}`}
+            onClick={() => setView(view === 'settings' ? 'dashboard' : 'settings')}
+            title="Alert limits and advanced options"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                d="M4 7h9M17 7h3M4 17h3M11 17h9M13 4v6M7 14v6"
+              />
+            </svg>
+            Settings
+          </button>
           {running && (
             <button className="btn danger" onClick={() => api.stop()}>
               Stop
@@ -175,11 +190,12 @@ export default function App() {
         </div>
       )}
 
-      {showStart && <StartCard status={status} serverUp={serverUp} />}
-      {showStart && <Garage serverUp={serverUp} status={status} />}
-      {hasData && <AlertBanner last={last} />}
+      {view === 'settings' && <Settings U={U} running={running} onClose={() => setView('dashboard')} />}
+      {view === 'dashboard' && showStart && <StartCard status={status} serverUp={serverUp} />}
+      {view === 'dashboard' && showStart && <Garage serverUp={serverUp} status={status} />}
+      {view === 'dashboard' && hasData && <AlertBanner last={last} />}
 
-      {(running || hasData) && (
+      {view === 'dashboard' && (running || hasData) && (
         <div className="layout">
           <main>
             <section className="gauges">
@@ -196,7 +212,15 @@ export default function App() {
                   { from: 5500, to: 6500, color: COLORS.warn },
                   { from: 6500, to: 7001, color: COLORS.bad },
                 ]}
-                sub={v.RPM == null ? '' : v.RPM < 400 ? 'Engine off' : v.SPEED === 0 ? 'Idling' : 'Running'}
+                sub={
+                  v.RPM == null
+                    ? ''
+                    : v.RPM < L.running_rpm
+                      ? 'Engine off'
+                      : v.SPEED === 0
+                        ? 'Idling'
+                        : 'Running'
+                }
               />
               <Gauge
                 label="Speed"
@@ -212,14 +236,14 @@ export default function App() {
                 label="Coolant temperature"
                 value={U.t(cool)}
                 min={U.t(40)}
-                max={U.t(120)}
+                max={U.t(coolMax)}
                 unit={U.temp}
                 ticks={8}
                 zones={[
-                  { from: U.t(40), to: U.t(70), color: COLORS.cold },
-                  { from: U.t(70), to: U.t(102), color: COLORS.ok },
-                  { from: U.t(102), to: U.t(108), color: COLORS.warn },
-                  { from: U.t(108), to: U.t(121), color: COLORS.bad },
+                  { from: U.t(40), to: U.t(L.coolant_cold_c), color: COLORS.cold },
+                  { from: U.t(L.coolant_cold_c), to: U.t(L.coolant_warn_c), color: COLORS.ok },
+                  { from: U.t(L.coolant_warn_c), to: U.t(L.coolant_crit_c), color: COLORS.warn },
+                  { from: U.t(L.coolant_crit_c), to: U.t(coolMax + 1), color: COLORS.bad },
                 ]}
                 sub={coolSub}
               />
@@ -269,7 +293,7 @@ export default function App() {
                   unit={U.temp}
                   rows={rows}
                   windowSec={win}
-                  thresholds={[{ y: U.t(102), color: COLORS.warn }]}
+                  thresholds={[{ y: U.t(L.coolant_warn_c), color: COLORS.warn }]}
                   series={[{ label: 'Coolant', color: COLORS.orange, get: (x) => U.t(x.COOLANT_TEMP) }]}
                 />
                 <LineChart
@@ -278,11 +302,11 @@ export default function App() {
                   decimals={1}
                   rows={rows}
                   windowSec={win}
-                  yMin={-15}
-                  yMax={15}
+                  yMin={-trimSpan}
+                  yMax={trimSpan}
                   thresholds={[
-                    { y: 10, color: COLORS.warn },
-                    { y: -10, color: COLORS.warn },
+                    { y: L.ltft_warn_pct, color: COLORS.warn },
+                    { y: -L.ltft_warn_pct, color: COLORS.warn },
                   ]}
                   series={[
                     { label: 'Short', color: COLORS.violet, get: (x) => x.SHORT_FUEL_TRIM_1 },
@@ -309,7 +333,7 @@ export default function App() {
                   windowSec={win}
                   yMin={11}
                   yMax={16}
-                  thresholds={[{ y: 13, color: COLORS.warn }]}
+                  thresholds={[{ y: L.battery_low_running_v, color: COLORS.warn }]}
                   series={[{ label: 'Volts', color: COLORS.ok, get: (x) => x.battery_v }]}
                 />
               </div>
@@ -354,7 +378,7 @@ export default function App() {
                     value={fmt(v.FUEL_LEVEL)}
                     unit="%"
                     bar={v.FUEL_LEVEL}
-                    color={v.FUEL_LEVEL < 10 ? COLORS.warn : COLORS.ok}
+                    color={v.FUEL_LEVEL < L.fuel_low_pct ? COLORS.warn : COLORS.ok}
                   />
                 )}
                 {v.FUEL_RAIL_PRESSURE_ABS != null && (
@@ -402,7 +426,7 @@ export default function App() {
           </main>
 
           <aside>
-            <Vitals last={last} U={U} />
+            <Vitals last={last} U={U} limits={L} />
             <WarmupCard last={last} U={U} />
             <CodesCard last={last} />
             <EventLog events={events} />

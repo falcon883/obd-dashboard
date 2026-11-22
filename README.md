@@ -37,8 +37,23 @@ That is all (restart `obd-dashboard` if it is running). If a release adds a new 
 | `obd-dashboard test` | raw adapter test (prints the ELM327's replies) |
 | `obd-dashboard ports` | list serial ports |
 
-Other flags: `--no-beep`, `--output-dir logs`, `--no-browser`, `-v` (debug log).
-Each session writes `obd_<time>_data.csv` and `obd_<time>_report.txt` into `logs/`.
+Other flags: `--no-beep`, `--no-vin-lookup`, `--output-dir logs`, `--no-browser`, `-v` (debug log).
+
+Logs are filed per car: `logs/<VIN>/<time>_data.csv`, `_report.txt`, `_summary.json`, plus a `car.json` profile.
+`obd-dashboard garage` lists your cars; `obd-dashboard garage rename <VIN> "Daily Sonata"` sets a nickname.
+
+## Settings
+
+The **Settings** button (top right) opens two tabs:
+
+- **Alert limits**: every threshold the health rules use (coolant, battery, fuel trim, catalyst, idle, misfires...).
+  Temperatures show in your chosen unit. Pick *All cars* to change the defaults, or pick one car to give it its own
+  limits (a diesel and a petrol car do not share the same normal). The blue bar marks what you changed; `↺` puts a
+  value back.
+- **Advanced**: beeps, the online make/model lookup, polling speed, trouble-code check interval, reconnect behaviour.
+
+Changes apply from the next session. They are saved in `logs/settings.json` (only what you changed, so new
+defaults in a future update still reach you), and each report starts with the limits it ran under.
 
 ## Project layout
 
@@ -47,6 +62,9 @@ Each session writes `obd_<time>_data.csv` and `obd_<time>_report.txt` into `logs
       connection.py  port discovery, baud probing, opening the link
       readers.py     read-only OBD queries, sensor planning
       rules.py       health rules (pure functions)
+      userconfig.py  editable limits + advanced options (validation, settings.json)
+      garage.py      per-car folders, profiles, safe downloads
+      vin.py         VIN -> year/make offline, model/engine via NHTSA
       report.py      CSV columns, report file, end-of-run summary
       session.py     the logging session (connect -> baseline -> loop -> summary)
       hub.py         live state + fan-out to browsers (thread-safe)

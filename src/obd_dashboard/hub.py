@@ -14,6 +14,7 @@ from obd_dashboard.demo import run_demo
 from obd_dashboard.session import Session
 from obd_dashboard.settings import Settings
 from obd_dashboard.types import BaseSink, EventPayload, RowPayload
+from obd_dashboard.userconfig import UserConfig
 
 log = logging.getLogger(__name__)
 
@@ -137,7 +138,7 @@ class Hub(BaseSink):
     def _run(self, cfg: Settings, demo: bool, stop: threading.Event) -> None:
         try:
             if demo:
-                run_demo(self, stop)
+                run_demo(self, stop, limits=UserConfig(cfg.output_dir).thresholds())
             else:
                 self._session_factory(cfg, self, stop).run()
         except Exception as exc:  # noqa: BLE001 - keep the server alive no matter what

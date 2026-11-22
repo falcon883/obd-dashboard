@@ -199,3 +199,42 @@ def test_lookup_failure_or_disabled_changes_nothing(settings):
     called = []
     run_session(replace(cfg, lookup_vin=False), FakeCar(), rows=5)  # fixture notifier; no network attempted
     assert called == []
+
+
+def test_saved_limits_apply_to_the_session_and_are_reported(settings):
+    from obd_dashboard.userconfig import UserConfig
+
+    vin = "1M8GDM9AXKP042781"
+    cfg = replace(settings, com="FAKE0", baud=38400)
+    config = UserConfig(cfg.output_dir)
+    config.set_thresholds({"coolant_warn_c": 90, "coolant_crit_c": 99})  # everywhere: the fake car heats past 102
+    config.set_thresholds({"fuel_low_pct": 30}, vin)  # this car only
+    session, sink = run_session(cfg, FakeCar(), rows=30)
+    assert session.limits.coolant_warn_c == 90 and session.limits.fuel_low_pct == 30
+    assert sink.infos[0]["thresholds"]["coolant_crit_c"] == 99
+    coolant = [e for e in sink.events if isinstance(e, dict) and e["msg"].startswith("Coolant")]
+    assert coolant[0]["level"] == "WARN" and any(e["level"] == "CRIT" for e in coolant)  # WARN from 90, CRIT from 99
+    assert all("overheating" not in e["msg"] for e in coolant if e["level"] == "WARN")
+    report = Path(sink.statuses[-1][2]["report"]).read_text()
+    assert "Alert limits: coolant_warn_c=90, coolant_crit_c=99, fuel_low_pct=30" in report
+
+
+def test_unchanged_settings_report_defaults_and_leave_tuning_alone(settings):
+    cfg = replace(settings, com="FAKE0", baud=38400)
+    session, sink = run_session(cfg, FakeCar(), rows=5)
+    assert session.tune == cfg.tuning
+    assert "Alert limits: defaults" in Path(sink.statuses[-1][2]["report"]).read_text()
+
+
+def test_saved_advanced_options_override_tuning_but_cli_off_switches_win(settings):
+    from obd_dashboard.userconfig import UserConfig
+
+    cfg = replace(settings, com="FAKE0", baud=38400, beep=True)
+    UserConfig(cfg.output_dir).set_advanced({"extra_per_loop": 7, "beep": False, "lookup_vin": False})
+    stop = threading.Event()
+    session = Session(cfg, RecordingSink(stop, 3), stop, connector=lambda _p, _b: FakeCar())
+    assert session.tune.extra_per_loop == 7 and session.tune.slow_every == cfg.tuning.slow_every
+    assert session._lookup_vin is False
+    # saved beep=False silences the default notifier even though the command line did not say --no-beep
+    assert session._notify.__name__ != "beep"
+    session.run()

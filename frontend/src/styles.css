@@ -1004,3 +1004,149 @@ button {
     display: none;
   }
 }
+
+/* ---------- settings ---------- */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.icon-btn.on {
+  background: rgba(148, 163, 184, 0.2);
+}
+.settings {
+  width: min(760px, 100%);
+  margin: 18px auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.settings .seg {
+  align-self: flex-start;
+}
+.set-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.set-head h2 {
+  font-size: 1.35rem;
+}
+.set-head p {
+  margin: 4px 0 0;
+}
+.settings .banner ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.set-scope {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.set-scope label {
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 650;
+}
+.set-scope p {
+  margin: 0;
+}
+.settings select,
+.settings input[type='number'] {
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 11px;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.92rem;
+}
+.set-group {
+  padding-bottom: 6px;
+}
+.set-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 11px 0 11px 12px;
+  border-top: 1px solid var(--line);
+  border-left: 3px solid transparent;
+  margin-left: -12px;
+}
+.set-row:first-of-type {
+  border-top: 0;
+}
+.set-row.changed {
+  border-left-color: var(--info);
+}
+.set-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.set-text label {
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+.set-help {
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.set-help em {
+  color: var(--dim);
+  font-style: normal;
+}
+.set-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.set-input input[type='number'] {
+  width: 96px;
+  text-align: right;
+}
+.set-input input[type='checkbox'] {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--ok);
+}
+.set-unit {
+  width: 62px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.set-reset-slot {
+  display: inline-block;
+  width: 58px;
+}
+.set-input .link-btn {
+  padding: 0;
+  white-space: nowrap;
+}
+.set-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 8px;
+}
+.grow {
+  flex: 1;
+}
+@media (max-width: 560px) {
+  .set-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .set-input {
+    justify-content: flex-end;
+  }
+}

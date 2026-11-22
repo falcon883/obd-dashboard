@@ -15,6 +15,7 @@ import threading
 import time
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import uvicorn
 
@@ -28,6 +29,27 @@ from obd_dashboard.settings import Settings, Tuning  # noqa: E402
 from obd_dashboard.vin import CarInfo  # noqa: E402
 
 PORT = 8124
+
+
+def check_settings(page: Any, out: Path, errors: list[str]) -> None:
+    """Open Settings, save a limit (typed in °F), try an impossible one, look at Advanced."""
+    page.get_by_role("button", name="Settings").click()
+    page.wait_for_timeout(800)
+    page.screenshot(path=str(out / "4_settings.png"), full_page=True)
+    page.fill("#s-coolant_warn_c", "225")  # the page shows °F; 225 °F = 107.22 °C (still below the 108 critical)
+    page.get_by_role("button", name="Save", exact=True).click()
+    page.wait_for_selector("text=Saved.")
+    saved = page.request.get(f"http://localhost:{PORT}/api/settings").json()["thresholds"]["coolant_warn_c"]
+    if abs(saved - 107.22) > 0.01:
+        errors.append(f"settings: expected 107.22 C saved, got {saved}")
+    page.fill("#s-coolant_warn_c", "300")
+    page.get_by_role("button", name="Save", exact=True).click()
+    page.wait_for_selector("text=must be between")
+    page.screenshot(path=str(out / "5_settings_error.png"), full_page=True)
+    page.get_by_role("button", name="Advanced").click()
+    page.wait_for_timeout(500)
+    page.screenshot(path=str(out / "6_advanced.png"), full_page=True)
+    page.get_by_role("button", name="Done").click()
 
 
 def main() -> int:
@@ -73,11 +95,13 @@ def main() -> int:
         page.get_by_role("button", name="Stop").click()
         page.wait_for_timeout(4000)
         page.screenshot(path=str(out / "2_finished.png"), full_page=True)
+        check_settings(page, out, errors)
         mobile = browser.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=2)
         mobile.goto(f"http://localhost:{PORT}")
         mobile.wait_for_timeout(1500)
         mobile.screenshot(path=str(out / "3_mobile.png"), full_page=True)
         browser.close()
+    errors = [e for e in errors if "422" not in e]  # the deliberately rejected settings save
     print("console errors:", errors or "none")
     return 1 if errors else 0
 
