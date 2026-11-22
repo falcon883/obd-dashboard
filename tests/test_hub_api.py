@@ -1,0 +1,226 @@
+from __future__ import annotations
+
+import asyncio
+import json
+import time
+
+import pytest
+from fastapi.testclient import TestClient
+
+from obd_dashboard.api import create_app, event_stream
+from obd_dashboard.hub import Hub, SessionBusy
+from obd_dashboard.settings import Settings
+
+
+def wait_for(cond, timeout=3.0):
+    end = time.time() + timeout
+    while time.time() < end:
+        if cond():
+            return True
+        time.sleep(0.02)
+    return False
+
+
+@pytest.fixture
+def hub(settings):
+    h = Hub(settings)
+    yield h
+    h.end()
+    h.join(3)
+
+
+@pytest.fixture
+def client(settings, hub, tmp_path):
+    ui = tmp_path / "ui"
+    ui.mkdir()
+    (ui / "index.html").write_text("<h1>ui</h1>")
+    app = create_app(Settings(**{**settings.__dict__, "static_dir": ui}), hub)
+    with TestClient(app) as c:
+        yield c
+
+
+def test_state_starts_idle(client):
+    body = client.get("/api/state").json()
+    assert body["status"]["state"] == "idle" and body["running"] is False and body["history"] == []
+
+
+def test_serves_the_built_ui(client):
+    assert "<h1>ui</h1>" in client.get("/").text
+
+
+def test_friendly_page_when_ui_is_not_built(settings, tmp_path):
+    app = create_app(Settings(**{**settings.__dict__, "static_dir": tmp_path / "nope"}))
+    with TestClient(app) as c:
+        assert "not built" in c.get("/").text
+
+
+def test_demo_session_start_stream_state_and_stop(client, hub):
+    assert client.post("/api/start", json={"demo": True}).json() == {"ok": True, "message": "started"}
+    assert wait_for(lambda: client.get("/api/state").json()["last"] is not None)
+    state = client.get("/api/state").json()
+    assert state["running"] and state["demo"] and state["info"]["demo"] is True
+    assert state["history"][0]["v"]["RPM"] > 0
+
+    assert client.post("/api/start", json={"demo": True}).status_code == 409  # one session at a time
+    assert client.post("/api/stop").json()["ok"] is True
+    assert wait_for(lambda: client.get("/api/state").json()["status"]["state"] == "finished")
+    assert client.get("/api/state").json()["status"]["result"]["summary"] == ["Demo session ended."]
+
+
+@pytest.mark.parametrize("body", [{"port": "COM4; rm -rf /"}, {"baud": -1}, {"baud": "fast"}, {"port": "x" * 100}])
+def test_start_rejects_bad_input(client, body):
+    assert client.post("/api/start", json=body).status_code == 422
+
+
+def test_ports_endpoint(client, monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        "obd_dashboard.api.list_ports.comports", lambda: [SimpleNamespace(device="COM4", description="CH340")]
+    )
+    assert client.get("/api/ports").json() == [{"device": "COM4", "description": "CH340"}]
+
+
+def test_no_cors_headers_so_other_sites_cannot_drive_the_api(client):
+    r = client.options(
+        "/api/start", headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "POST"}
+    )
+    assert "access-control-allow-origin" not in r.headers
+
+
+def test_hub_rejects_a_second_session(hub):
+    hub.start(demo=True)
+    with pytest.raises(SessionBusy):
+        hub.start(demo=True)
+
+
+def test_hub_survives_a_crashing_session(settings):
+    class Boom:
+        def __init__(self, *_a):
+            pass
+
+        def run(self):
+            raise ValueError("kaput")
+
+    h = Hub(settings, session_factory=Boom)
+    h.start()
+    assert wait_for(lambda: h.snapshot()["status"]["state"] == "error")
+    assert "ValueError: kaput" in h.snapshot()["status"]["message"]
+    h.join(2)
+
+
+def test_hub_passes_port_and_baud_to_the_session(settings):
+    seen = {}
+
+    class Spy:
+        def __init__(self, cfg, _sink, _stop):
+            seen["com"], seen["baud"] = cfg.com, cfg.baud
+
+        def run(self):
+            pass
+
+    h = Hub(settings, session_factory=Spy)
+    h.start(port="COM7", baud=9600)
+    h.join(2)
+    assert seen == {"com": "COM7", "baud": 9600}
+
+
+def test_sse_stream_sends_snapshot_then_live_events_then_cleans_up(hub):
+    async def scenario():
+        hub.attach_loop(asyncio.get_running_loop())
+        disconnected = False
+
+        async def is_disconnected():
+            return disconnected
+
+        stream = event_stream(hub, is_disconnected, ping_every=0.05)
+        first = await stream.__anext__()
+        assert first.startswith("event: snapshot") and json.loads(first.split("data: ")[1])["running"] is False
+
+        hub.on_row({"t": 1.0, "ts": "x", "values": {"RPM": 800}})  # type: ignore[typeddict-item]
+        row = await stream.__anext__()
+        assert row.startswith("event: row") and '"RPM": 800' in row
+        assert await stream.__anext__() == ": ping\n\n"  # idle -> keep-alive
+
+        disconnected = True
+        with pytest.raises(StopAsyncIteration):
+            await stream.__anext__()
+        assert not hub._clients
+
+    asyncio.run(scenario())
+
+
+def test_slow_client_is_dropped_and_told_to_resync(hub):
+    async def scenario():
+        hub.attach_loop(asyncio.get_running_loop())
+
+        async def never():
+            return False
+
+        stream = event_stream(hub, never, ping_every=0.05)
+        await stream.__anext__()  # snapshot
+        (queue,) = hub._clients
+        for i in range(queue.maxsize):
+            queue.put_nowait(f"m{i}")
+        hub._deliver("overflow")  # queue full -> client discarded
+        assert not hub.is_subscribed(queue)
+        for _ in range(queue.maxsize):
+            await stream.__anext__()  # drain what was queued
+        with pytest.raises(StopAsyncIteration):  # then the stream ends so EventSource reconnects
+            await stream.__anext__()
+
+    asyncio.run(scenario())
+
+
+def test_snapshot_is_safe_while_the_logger_thread_writes(hub):
+    import threading
+
+    stop = threading.Event()
+
+    def writer():
+        i = 0
+        while not stop.is_set():
+            hub.on_row({"t": float(i), "ts": "x", "values": {"RPM": i}})  # type: ignore[typeddict-item]
+            i += 1
+
+    t = threading.Thread(target=writer)
+    t.start()
+    try:
+        for _ in range(300):
+            hub.snapshot()  # would raise "deque mutated during iteration" without the lock
+    finally:
+        stop.set()
+        t.join()
+
+
+def test_garage_endpoints(client, settings):
+    from obd_dashboard.garage import Garage
+
+    g = Garage(settings.output_dir)
+    vin = "5NPE24AF3GH283081"
+    g.register(vin)
+    folder = g.car_dir(vin)
+    (folder / "20261121_100000_data.csv").write_text("a,b\n1,2\n")
+    (folder / "20261121_100000_summary.json").write_text('{"verdict": "ok", "duration_s": 61.0, "rows": 61}')
+
+    overview = client.get("/api/garage").json()
+    assert overview["cars"][0]["vin"] == vin and overview["cars"][0]["session_count"] == 1
+    assert overview["cars"][0]["sessions"][0]["verdict"] == "ok"
+
+    r = client.get(f"/api/garage/{vin}/20261121_100000_data.csv")
+    assert r.status_code == 200 and r.text == "a,b\n1,2\n" and "attachment" in r.headers["content-disposition"]
+    assert client.get(f"/api/garage/{vin}/car.json").status_code == 404  # only log files are downloadable
+    assert client.get(f"/api/garage/{vin}/..%2Fcar.json").status_code == 404
+    assert client.get("/api/garage/5NPE24AF3GH28308X/20261121_100000_data.csv").status_code == 404
+
+    renamed = client.post(f"/api/garage/{vin}", json={"nickname": "Daily"})
+    assert renamed.json()["display_name"] == "Daily"
+    assert client.post("/api/garage/5NPE24AF9GH000002", json={"nickname": "x"}).status_code == 404
+    assert client.post(f"/api/garage/{vin}", json={"nickname": "x" * 61}).status_code == 422
+
+
+def test_demo_reports_a_car(client):
+    client.post("/api/start", json={"demo": True})
+    assert wait_for(lambda: client.get("/api/state").json()["info"] is not None)
+    assert client.get("/api/state").json()["info"]["car"]["display_name"] == "2016 Hyundai Sonata"
+    client.post("/api/stop")

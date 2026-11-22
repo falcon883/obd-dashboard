@@ -1,0 +1,11 @@
+__pycache__/
+*.egg-info/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+logs/
+obd_*_data.csv
+obd_*_report.txt
+frontend/node_modules/
