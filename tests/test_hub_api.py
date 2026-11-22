@@ -200,7 +200,7 @@ def test_garage_endpoints(client, settings):
     vin = "5NPE24AF3GH283081"
     g.register(vin)
     folder = g.car_dir(vin)
-    (folder / "20261121_100000_data.csv").write_text("a,b\n1,2\n")
+    (folder / "20261121_100000_data.csv").write_bytes(b"a,b\n1,2\n")  # bytes: write_text would add CRLF on Windows
     (folder / "20261121_100000_summary.json").write_text('{"verdict": "ok", "duration_s": 61.0, "rows": 61}')
 
     overview = client.get("/api/garage").json()
