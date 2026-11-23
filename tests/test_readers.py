@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import obd
 
 from obd_dashboard import readers
@@ -131,3 +133,64 @@ def test_vin_keeps_a_trailing_one():
 
 def test_raw_text_falls_back_when_no_raw_frame():
     assert readers.raw_text(R("x")) is None
+
+
+# --- freeze frame (Mode 2) ---------------------------------------------------------------------------------------
+
+
+def _reply(*data: int) -> Any:
+    from obd import ECU
+    from obd.protocols.protocol import Frame, Message
+
+    message = Message([Frame("7E8")])
+    message.data = bytearray(data)
+    message.ecu = ECU.ENGINE
+    return message
+
+
+def test_frame_request_carries_the_frame_number() -> None:
+    cmd = readers.frame_command(obd.commands.DTC_COOLANT_TEMP)
+    assert cmd.command == b"020500" and cmd.bytes == obd.commands.DTC_COOLANT_TEMP.bytes + 1
+    assert readers.frame_command(obd.commands.DTC_RPM).command == b"020C00"
+
+
+def test_frame_replies_decode_to_the_right_numbers() -> None:
+    """python-OBD alone turns these replies into -40 C, 0 % and 6.5 rpm; the frame byte shifts everything."""
+    coolant = readers.frame_command(obd.commands.DTC_COOLANT_TEMP)([_reply(0x42, 0x05, 0x00, 0x82)])
+    assert coolant.value.magnitude == 90
+    load = readers.frame_command(obd.commands.DTC_ENGINE_LOAD)([_reply(0x42, 0x04, 0x00, 0x80)])
+    assert round(load.value.magnitude) == 50
+    rpm = readers.frame_command(obd.commands.DTC_RPM)([_reply(0x42, 0x0C, 0x00, 0x1A, 0xF8)])
+    assert rpm.value.magnitude == 1726
+    code = readers.frame_command(obd.commands.DTC_FREEZE_DTC)([_reply(0x42, 0x02, 0x00, 0x04, 0x56)])
+    assert code.value[0] == "P0456"
+
+
+def test_freeze_frame_lists_what_the_car_answers() -> None:
+    car = FakeCar()
+    car.supported_commands = set(car.supported_commands) | {
+        obd.commands.DTC_FREEZE_DTC,
+        obd.commands.DTC_COOLANT_TEMP,
+        obd.commands.DTC_RPM,
+    }
+    car.freeze = {"DTC_COOLANT_TEMP": Q(93, "celsius"), "DTC_RPM": Q(1500, "rpm")}
+    lines = readers.freeze_frame(car)
+    assert len(lines) == 2 and "DTC_COOLANT_TEMP" in lines[0] and "93" in lines[0] and "DTC_RPM" in lines[1]
+
+
+def test_freeze_frame_stops_asking_when_nothing_is_stored() -> None:
+    asked: list[str] = []
+
+    class Quiet(FakeCar):
+        def query(self, cmd: Any, force: bool = False) -> Any:
+            if cmd.mode == 2:
+                asked.append(cmd.name)
+            return super().query(cmd, force)
+
+    car = Quiet()
+    car.supported_commands = set(car.supported_commands) | {
+        getattr(obd.commands, n)
+        for n in ("DTC_FREEZE_DTC", "DTC_ENGINE_LOAD", "DTC_COOLANT_TEMP", "DTC_RPM", "DTC_SPEED")
+    }
+    assert readers.freeze_frame(car) == ["    (car returned no freeze-frame data)"]
+    assert len(asked) == readers.FREEZE_GIVE_UP_AFTER

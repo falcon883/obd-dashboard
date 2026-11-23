@@ -69,9 +69,10 @@ If you try it on yours, please tell us how it went with a
 [compatibility report](https://github.com/falcon883/obd-dashboard/issues/new?template=compatibility_report.yml)
 and we will add it to this table. Run `obd-dashboard support` first and attach the file it writes.
 
-Known gaps: freeze-frame data (a snapshot the car stores when a code sets) came back empty on the car that had a
-stored code. It may be that the car did not keep one, or that the reply is not being read correctly. The `support`
-file now records the raw reply so this can be checked.
+Known gaps: freeze-frame data (a snapshot the car stores when a code sets) came back empty on the 2013 car that had a
+stored code. The library asks for it without the frame number the standard requires, so that was fixed, but it has not
+been confirmed on a real car yet. If you have a car with a stored code, run `obd-dashboard support` and tell us what the
+`freeze_frame_probe` section says.
 
 ## Safety
 

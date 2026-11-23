@@ -50,6 +50,7 @@ class FakeCar:
         self.dead_after = dead_after  # stop answering after this many RPM queries
         self.closed = False
         self.supported_commands = SUPPORTED
+        self.freeze: dict[str, Any] | None = None  # name -> value, e.g. {"DTC_COOLANT_TEMP": Q(93, "celsius")}
 
     def supports(self, cmd: Any) -> bool:
         return cmd in SUPPORTED
@@ -69,8 +70,12 @@ class FakeCar:
     def close(self) -> None:
         self.closed = True
 
-    def query(self, cmd: Any) -> Any:  # noqa: C901 - a lookup table, deliberately flat
+    def query(self, cmd: Any, force: bool = False) -> Any:  # noqa: C901 - a lookup table, deliberately flat
         name = cmd.name
+        if cmd.mode == 2:  # freeze frame: like the 2013 Sonata, only the SAE form with a frame number gets an answer
+            if not force or len(cmd.command) != 6 or self.freeze is None or name not in self.freeze:
+                return obd.OBDResponse()
+            return R(self.freeze[name])
         if self.dead_after is not None and self.n >= self.dead_after:
             return obd.OBDResponse()
         if name == "RPM":

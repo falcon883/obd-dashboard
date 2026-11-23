@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -110,16 +111,61 @@ def misfire_counts(monitors: Dict[str, MonitorTests]) -> Dict[str, float]:
     return counts
 
 
+def _without_frame_byte(decode: Any) -> Any:
+    """Wrap a Mode 1 decoder for a Mode 2 reply, which carries one extra byte (the frame number) after the PID."""
+
+    def wrapped(messages: Any) -> Any:
+        fixed = []
+        for message in messages:
+            clone = copy.copy(message)
+            clone.data = bytearray(message.data[:2] + message.data[3:])
+            fixed.append(clone)
+        return decode(fixed)
+
+    return wrapped
+
+
+def frame_command(cmd: Any) -> Any:
+    """The Mode 2 request done the way SAE J1979 defines it: mode, PID *and frame number* (``0205`` -> ``020500``).
+
+    python-OBD leaves the frame number out. Some ECUs answer anyway; others, like the 2013 Sonata we tested,
+    stay silent, and the ones that do answer include the frame byte, which python-OBD's decoders do not expect.
+    """
+    return obd.OBDCommand(
+        cmd.name, cmd.desc, b"02%02X00" % cmd.pid, cmd.bytes + 1, _without_frame_byte(cmd.decode), cmd.ecu, False
+    )
+
+
+def query_frame(conn: Any, cmd: Any) -> Any:
+    """Send the frame-number form of a Mode 2 command. ``force`` skips python-OBD's support check, which would
+    otherwise refuse the new request because only the old form is in the supported list."""
+    try:
+        return conn.query(frame_command(cmd), force=True)
+    except Exception as exc:  # noqa: BLE001 - same rule as query()
+        log.debug("freeze-frame query %s failed: %s", getattr(cmd, "name", cmd), exc)
+        return obd.OBDResponse()
+
+
+# With no stored code there is no freeze frame and every PID answers NO DATA; no need to ask them all.
+FREEZE_GIVE_UP_AFTER = 3
+
+
 def freeze_frame(conn: Any) -> List[str]:
     cmds = sorted(
-        (c for c in conn.supported_commands if c.mode == 2 and "PIDS_" not in c.name),
+        (c for c in conn.supported_commands if c.mode == 2 and c.pid is not None and "PIDS_" not in c.name),
         key=lambda c: c.pid or 0,
     )
-    lines = []
+    lines: List[str] = []
+    misses = 0
     for cmd in cmds:
-        response = query(conn, cmd)
-        if not response.is_null():
-            lines.append(f"    {cmd.name:<32} {response.value}")
+        response = query_frame(conn, cmd)
+        if response.is_null():
+            misses += 1
+            if not lines and misses >= FREEZE_GIVE_UP_AFTER:
+                break
+            continue
+        misses = 0
+        lines.append(f"    {cmd.name:<32} {response.value}")
     return lines or ["    (car returned no freeze-frame data)"]
 
 

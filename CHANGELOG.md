@@ -12,10 +12,14 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
   (the engine computer winding down, or the adapter losing power) count as no reading.
 - The report no longer says "Codes at end: none" and "Mode 06 failures: none" when the car had simply stopped
   answering at the end. It keeps the last known codes and test failures and says so.
+- Freeze frame: python-OBD sends the request without the frame number that SAE J1979 requires (`0205` instead of
+  `020500`), and decodes any reply wrongly (a coolant reading of 90 °C came out as -40 °C). The app now sends the
+  complete request, decodes it correctly, and stops asking after three silent answers when no code is stored.
+  Not yet confirmed on a real car.
 
 ### Added
 - `obd-dashboard support`: writes an anonymous JSON report (adapter, protocol, supported sensors, trouble codes, a raw
-  freeze-frame probe) to attach to bug reports.
+  freeze-frame probe, tried both with and without the frame number) to attach to bug reports.
 - History screen: one point per drive for warm-up time, hottest coolant, charging voltage, long-term fuel trim and warm
   idle speed, with the normal range shaded, plus a table of every drive with report and CSV links. Computed from the
   existing CSV logs, so old drives show up too (`GET /api/history/{vin}`).

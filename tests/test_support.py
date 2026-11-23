@@ -117,7 +117,7 @@ def test_report_has_codes_and_a_freeze_frame_probe(tmp_path: Path) -> None:
     _, report = _run(tmp_path, FakeCar())
     assert set(report["codes"]) == {"mil", "stored", "pending"}
     probe = report["freeze_frame_probe"]
-    assert probe is None or {"command", "answered", "raw"} <= set(probe)
+    assert probe is None or {"command", "answered", "raw", "with_frame_number"} <= set(probe)
 
 
 def test_probe_records_the_raw_reply_and_survives_a_bad_message() -> None:
@@ -140,8 +140,18 @@ def test_probe_records_the_raw_reply_and_survives_a_bad_message() -> None:
             super().__init__()
             self.supported_commands = set(self.supported_commands) | {obd.commands.DTC_COOLANT_TEMP}
 
-        def query(self, cmd: Any) -> Any:
-            return Reply() if cmd.mode == 2 else super().query(cmd)
+        def query(self, cmd: Any, force: bool = False) -> Any:
+            return Reply() if cmd.mode == 2 else super().query(cmd, force)
 
     probe = support._freeze_frame_probe(Car())
     assert probe is not None and probe["answered"] is True and probe["raw"] == ["7E8 03 42 05 00"]
+    assert probe["with_frame_number"] == {"answered": True, "raw": ["7E8 03 42 05 00"]}
+
+
+def test_probe_tells_the_two_request_forms_apart() -> None:
+    """Like the 2013 Sonata: silent for the plain request, answers once the frame number is added."""
+    car = FakeCar()
+    car.supported_commands = set(car.supported_commands) | {obd.commands.DTC_COOLANT_TEMP}
+    car.freeze = {"DTC_COOLANT_TEMP": obd.Unit.Quantity(93, "celsius")}
+    probe = support._freeze_frame_probe(car)
+    assert probe is not None and probe["answered"] is False and probe["with_frame_number"]["answered"] is True
