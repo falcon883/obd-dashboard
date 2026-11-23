@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { fmtDuration, fmtStamp } from '../format.js'
+import { VERDICT } from '../history.js'
 
-const VERDICT = { ok: ['ok', 'OK'], warn: ['warn', 'Warnings'], crit: ['bad', 'Critical'] }
 const SHOWN = 5
 
 function Session({ vin, s }) {

@@ -28,6 +28,7 @@ const write = async (method, url, body) => {
 
 export const api = {
   garage: () => fetch('/api/garage').then(json),
+  history: (vin) => fetch(`/api/history/${encodeURIComponent(vin)}`).then(json),
   rename: (vin, nickname) => post(`/api/garage/${encodeURIComponent(vin)}`, { nickname }),
   fileUrl: (vin, name) => `/api/garage/${encodeURIComponent(vin)}/${encodeURIComponent(name)}`,
   settings: () => fetch('/api/settings').then(json),

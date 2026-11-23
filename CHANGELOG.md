@@ -16,6 +16,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 ### Added
 - `obd-dashboard support`: writes an anonymous JSON report (adapter, protocol, supported sensors, trouble codes, a raw
   freeze-frame probe) to attach to bug reports.
+- History screen: one point per drive for warm-up time, hottest coolant, charging voltage, long-term fuel trim and warm
+  idle speed, with the normal range shaded, plus a table of every drive with report and CSV links. Computed from the
+  existing CSV logs, so old drives show up too (`GET /api/history/{vin}`).
 - GPL-2.0-only license, contributing guide, security policy, issue and pull request templates, Dependabot.
 - README: screenshots, tested-on table (two cars), safety and privacy notes.
 

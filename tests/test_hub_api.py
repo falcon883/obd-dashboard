@@ -267,3 +267,19 @@ def test_demo_uses_saved_limits(client):
     assert wait_for(lambda: client.get("/api/state").json()["info"] is not None)
     assert client.get("/api/state").json()["info"]["thresholds"]["coolant_warn_c"] == 95
     client.post("/api/stop")
+
+
+def test_history_endpoint(client, settings):
+    from obd_dashboard.garage import Garage
+    from tests.test_history import cold_drive, write_log
+
+    garage = Garage(settings.output_dir)
+    vin = "5NPE24AF3GH283081"
+    garage.register(vin)
+    write_log(garage.car_dir(vin) / "20261122_080000_data.csv", cold_drive(900))
+    body = client.get(f"/api/history/{vin}").json()
+    assert body["car"]["vin"] == vin and len(body["drives"]) == 1
+    assert body["drives"][0]["coolant_max_c"] == 85.0
+    assert client.get("/api/history/5NPE24AF9GH000002").status_code == 404  # valid shape, no such car
+    assert client.get("/api/history/not-a-vin").status_code == 404
+    assert client.get("/api/history/..%2F..%2Fetc").status_code == 404

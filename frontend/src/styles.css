@@ -1150,3 +1150,108 @@ button {
     justify-content: flex-end;
   }
 }
+
+/* History screen */
+.settings.history {
+  width: min(1040px, 100%);
+}
+.trend-grid-wrap {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+.trend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.trend-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+.trend-head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+.trend-now {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+.trend-now.warn {
+  color: var(--warn);
+}
+.trend svg {
+  width: 100%;
+  height: auto;
+}
+.trend-band {
+  fill: var(--ok);
+  opacity: 0.08;
+}
+.trend-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.trend-tick {
+  fill: var(--muted);
+  font-size: 10px;
+}
+.trend-line {
+  fill: none;
+  stroke: var(--info);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.trend-dot {
+  fill: var(--info);
+  stroke: var(--card);
+  stroke-width: 1.5;
+}
+.trend-dot.warn {
+  fill: var(--warn);
+}
+.trend p,
+.hist-table h3 {
+  margin: 0;
+}
+.trend-empty {
+  padding: 24px 0;
+  text-align: center;
+}
+.hist-table {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.hist-table p {
+  margin: 0;
+}
+.table-scroll {
+  overflow-x: auto;
+}
+.hist-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
+}
+.hist-table th {
+  text-align: left;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+.hist-table td {
+  padding: 8px 10px;
+  border-top: 1px solid var(--line);
+  white-space: nowrap;
+}
+.hist-table tr.dim td {
+  color: var(--muted);
+}

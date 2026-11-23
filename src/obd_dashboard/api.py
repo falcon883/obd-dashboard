@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from serial.tools import list_ports
 
 from obd_dashboard.garage import Garage
+from obd_dashboard.history import History
 from obd_dashboard.hub import Hub, SessionBusy
 from obd_dashboard.settings import Settings
 from obd_dashboard.userconfig import ConfigError, UserConfig
@@ -138,6 +139,15 @@ def create_app(settings: Settings, hub: Optional[Hub] = None) -> FastAPI:
         if path is None:
             raise HTTPException(status_code=404, detail="No such file")
         return FileResponse(path, filename=name)
+
+    history = History(garage)
+
+    @app.get("/api/history/{vin}")
+    def car_history(vin: str) -> Dict[str, Any]:
+        car = garage.load(vin) if garage.valid_key(vin) else None
+        if car is None:
+            raise HTTPException(status_code=404, detail="Unknown car")
+        return {"car": car.to_dict(), "drives": history.drives(vin)}
 
     config = UserConfig(settings.output_dir)
 

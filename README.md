@@ -98,6 +98,13 @@ file now records the raw reply so this can be checked.
 2. Open it and check you are happy to share it.
 3. [Open an issue](https://github.com/falcon883/obd-dashboard/issues/new/choose) and attach the file.
 
+## History
+
+The **History** button (top right) shows how each car is doing over time, one point per drive: warm-up time, hottest
+coolant, charging voltage, long-term fuel trim and warm idle speed. The shaded band is the range your alert limits treat
+as normal. Below the charts is a table of every drive with its report and CSV. Everything is worked out from the CSV logs
+you already have, so older drives appear too. Logs under a minute are listed but left out of the charts.
+
 ## Settings
 
 ![Settings screen](docs/screenshots/settings.png)
@@ -123,6 +130,7 @@ defaults in a future update still reach you), and each report starts with the li
       userconfig.py  editable limits + advanced options (validation, settings.json)
       support.py     the `support` command (anonymous diagnostics file)
       garage.py      per-car folders, profiles, safe downloads
+      history.py     per-drive numbers from the CSV logs (trends)
       vin.py         VIN -> year/make offline, model/engine via NHTSA
       report.py      CSV columns, report file, end-of-run summary
       session.py     the logging session (connect -> baseline -> loop -> summary)

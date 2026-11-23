@@ -5,6 +5,7 @@ import { COLORS, carLine, fmt, fmtDuration, limitsOf, makeUnits } from './format
 import Gauge from './components/Gauge.jsx'
 import LineChart from './components/LineChart.jsx'
 import Garage from './components/Garage.jsx'
+import History from './components/History.jsx'
 import Settings from './components/Settings.jsx'
 import StartCard from './components/StartCard.jsx'
 import {
@@ -55,7 +56,7 @@ export default function App() {
   const { serverUp, status, info, rows, last, events } = useObdStream()
   const [sys, setSys] = useState(loadUnits)
   const [win, setWin] = useState(120)
-  const [view, setView] = useState('dashboard') // 'dashboard' | 'settings'
+  const [view, setView] = useState('dashboard') // 'dashboard' | 'history' | 'settings'
   const U = useMemo(() => makeUnits(sys), [sys])
   const L = useMemo(() => limitsOf(info), [info])
   const running = RUNNING.includes(status.state)
@@ -154,6 +155,23 @@ export default function App() {
             </button>
           </div>
           <button
+            className={`btn ghost icon-btn${view === 'history' ? ' on' : ''}`}
+            onClick={() => setView(view === 'history' ? 'dashboard' : 'history')}
+            title="How each car has been doing over time"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M4 19V5M4 19h16M8 15l3-4 3 2 5-7"
+              />
+            </svg>
+            History
+          </button>
+          <button
             className={`btn ghost icon-btn${view === 'settings' ? ' on' : ''}`}
             onClick={() => setView(view === 'settings' ? 'dashboard' : 'settings')}
             title="Alert limits and advanced options"
@@ -190,6 +208,7 @@ export default function App() {
         </div>
       )}
 
+      {view === 'history' && <History U={U} info={info} onClose={() => setView('dashboard')} />}
       {view === 'settings' && <Settings U={U} running={running} onClose={() => setView('dashboard')} />}
       {view === 'dashboard' && showStart && <StartCard status={status} serverUp={serverUp} />}
       {view === 'dashboard' && showStart && <Garage serverUp={serverUp} status={status} />}
