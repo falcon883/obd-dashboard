@@ -119,8 +119,8 @@ THRESHOLD_FIELDS: Tuple[Field, ...] = (
     Field("ltft_warn_pct", "Long-term trim warning (±)", _G_FUEL, 10, "number", "%", 3, 40, 1),
     Field("ltft_crit_pct", "Long-term trim critical (±)", _G_FUEL, 20, "number", "%", 5, 50, 1),
     Field("stft_warn_pct", "Short-term trim average warning (±)", _G_FUEL, 15, "number", "%", 3, 40, 1),
-    Field("stft_window", "Short-term trim average over", _G_FUEL, 30, "int", "readings", 5, 300, 5,
-          "About one reading per second."),
+    Field("stft_window", "Short-term trim average over", _G_FUEL, 30, "int", "s", 5, 300, 5,
+          "How many seconds of short-term trim are averaged before it can raise an alert."),
     Field("catalyst_warn_c", "Catalyst warning", _G_EXHAUST, 950, "temp", "", 600, 1200, 10,
           "A normal full-throttle drive can reach about 930 °C, so the default leaves room."),
     Field("catalyst_crit_c", "Catalyst critical", _G_EXHAUST, 1000, "temp", "", 650, 1300, 10),
@@ -131,7 +131,8 @@ THRESHOLD_FIELDS: Tuple[Field, ...] = (
 # fmt: on
 
 ADVANCED_DEFAULTS: Dict[str, Any] = {
-    "beep": True, "lookup_vin": True, "target_loop": 1.0, "extra_per_loop": 4, "slow_every": 60.0,
+    "beep": True, "lookup_vin": True, "target_loop": 0.25, "extra_per_loop": 4, "fast_adapter": True,
+    "slow_every": 60.0,
     "lost_after": 15, "reconnect_tries": 3, "reconnect_wait": 5.0,
 }  # fmt: skip
 
@@ -142,10 +143,13 @@ ADVANCED_FIELDS: Tuple[Field, ...] = (
           help="3 long beeps = critical, 1 short = warning. The --no-beep option still wins."),
     Field("lookup_vin", "Look up make & model online", _A_ALERTS, True, "bool",
           help="Asks the free NHTSA service; only the VIN is sent. Needs internet."),
-    Field("target_loop", "Seconds per reading", _A_POLL, 1.0, "number", "s", 0.25, 10, 0.25,
-          "Lower is smoother but the adapter may not keep up."),
+    Field("target_loop", "Fewest seconds per reading", _A_POLL, 0.25, "number", "s", 0.1, 10, 0.05,
+          "The adapter sets the real speed; this only stops it going faster than needed."),
     Field("extra_per_loop", "Slower sensors read each cycle", _A_POLL, 4, "int", "", 1, 30, 1,
-          "Fast sensors are read every cycle; the rest take turns."),
+          "Speed, RPM, load, throttle, manifold pressure, timing and short-term trim are read every cycle, "
+          "coolant, long-term trim and voltage once a second, the rest take turns."),
+    Field("fast_adapter", "Fast adapter mode", _A_POLL, True, "bool",
+          help="The adapter answers as soon as the car has replied. If the first readings fail, it turns itself off."),
     Field("slow_every", "Trouble-code check every", _A_POLL, 60, "number", "s", 10, 600, 5,
           "Stored/pending codes and the misfire counters."),
     Field("lost_after", "Link lost after", _A_LINK, 15, "int", "empty cycles", 3, 120, 1,
@@ -154,7 +158,15 @@ ADVANCED_FIELDS: Tuple[Field, ...] = (
     Field("reconnect_wait", "Wait between attempts", _A_LINK, 5, "number", "s", 1, 60, 1),
 )
 # fmt: on
-TUNING_KEYS = ("target_loop", "extra_per_loop", "slow_every", "lost_after", "reconnect_tries", "reconnect_wait")
+TUNING_KEYS = (
+    "target_loop",
+    "extra_per_loop",
+    "fast_adapter",
+    "slow_every",
+    "lost_after",
+    "reconnect_tries",
+    "reconnect_wait",
+)
 
 # (lower, higher): the first must stay below the second.
 ORDERED: Tuple[Tuple[str, str], ...] = (

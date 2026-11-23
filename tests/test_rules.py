@@ -88,12 +88,33 @@ def test_long_term_fuel_trim_direction_and_severity():
     assert "ltft" not in run({"LONG_FUEL_TRIM_1": 9.9})
 
 
-def test_short_term_trim_needs_a_full_window():
+def test_short_term_trim_needs_most_of_its_window():
     state = RuleState()
-    state.stft.extend([20.0] * 29)
+    for second in range(20):  # 20 s of a 30 s window: too early to trust
+        state.add_stft(float(second), 20.0, 30)
     assert "stft" not in run({}, state)
-    state.stft.append(20.0)
+    for second in range(20, 26):
+        state.add_stft(float(second), 20.0, 30)
     assert run({}, state)["stft"].level == "WARN"
+
+
+def test_short_term_trim_window_is_in_seconds_not_readings():
+    """Four readings a second or one: the same 30 s of history gives the same average."""
+    state = RuleState()
+    for tick in range(0, 31 * 4):
+        state.add_stft(tick / 4, 20.0, 30)
+    assert len(state.stft) <= 30 * 4 + 1  # older readings were dropped
+    assert state.stft[-1][0] - state.stft[0][0] <= 30
+    assert "stft" in run({}, state)
+
+
+def test_old_short_term_trim_readings_fall_out_of_the_average():
+    state = RuleState()
+    for second in range(0, 40):
+        state.add_stft(float(second), 20.0, 30)
+    for second in range(40, 80):  # then the trim settles back
+        state.add_stft(float(second), 0.0, 30)
+    assert "stft" not in run({}, state)
 
 
 def test_idle_rule_only_when_warm_and_stopped():

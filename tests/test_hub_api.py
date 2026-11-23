@@ -283,3 +283,21 @@ def test_history_endpoint(client, settings):
     assert client.get("/api/history/5NPE24AF9GH000002").status_code == 404  # valid shape, no such car
     assert client.get("/api/history/not-a-vin").status_code == 404
     assert client.get("/api/history/..%2F..%2Fetc").status_code == 404
+
+
+def test_replayed_history_is_trimmed_by_time_and_carries_only_chart_values():
+    from obd_dashboard import hub as hub_module
+
+    class Quiet(hub_module.Hub):
+        def _broadcast(self, kind, payload):  # no event loop in this test
+            pass
+
+    h = Quiet(Settings())
+    for i in range(4000):  # 4 rows a second for 1000 s
+        t = i / 4
+        h.on_row({"t": t, "ts": "x", "values": {"RPM": 800.0, "INTAKE_TEMP": 20.0, "battery_v": 14.1}, "alerts": {},
+                  "codes": {}, "misfire": {}, "misfire0": None, "warm": {}, "start_cool": None})  # fmt: skip
+    history = h.snapshot()["history"]
+    assert history[-1]["t"] - history[0]["t"] <= hub_module.HISTORY_SECONDS
+    assert len(history) <= hub_module.HISTORY_ROWS
+    assert history[0]["v"] == {"RPM": 800.0, "battery_v": 14.1}  # INTAKE_TEMP is only in `last`

@@ -100,12 +100,15 @@ def test_read_static_decodes_vin_and_counters_skip_text():
 def test_plan_sensors_splits_fast_rotating_static_and_monitors():
     plan = readers.plan_sensors(FakeCar())
     fast = {c.name for c in plan.fast}
-    assert {"RPM", "SPEED", "COOLANT_TEMP"} <= fast
+    assert {"RPM", "SPEED", "ENGINE_LOAD", "THROTTLE_POS", "SHORT_FUEL_TRIM_1"} <= fast
+    steady = {c.name for c in plan.steady}
+    assert {"COOLANT_TEMP", "LONG_FUEL_TRIM_1", "CONTROL_MODULE_VOLTAGE"} <= steady
     rest = {c.name for c in plan.rest}
     assert "FUEL_STATUS" in rest and "VIN" not in rest and "STATUS" not in rest
     assert {c.name for c in plan.statics} >= {"VIN", "FUEL_TYPE"}
     assert all(c.name.startswith("MONITOR_") for c in plan.monitors)
-    assert not (fast & rest)
+    assert not (fast & rest) and not (steady & rest) and not (fast & steady)
+    assert {c.name for c in plan.polled} == fast | steady | rest
 
 
 def test_never_issues_clear_codes():

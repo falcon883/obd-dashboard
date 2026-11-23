@@ -133,7 +133,8 @@ def render_summary(d: SummaryData) -> List[str]:
         "",
         "=== SUMMARY ===",
         f"Overall: {VERDICTS[d.worst]}",
-        f"Duration {d.duration_s / 60:.1f} min | {d.loops} rows | avg {d.duration_s / max(d.loops, 1):.2f} s/row",
+        f"Duration {d.duration_s / 60:.1f} min | {d.loops} rows | avg {d.duration_s / max(d.loops, 1):.2f} s/row "
+        f"({d.loops / max(d.duration_s, 0.001):.1f} rows/s)",
         f"Coolant warm-up: start {start}, reached {reached}",
         f"Codes at end: stored {d.end_codes.get('stored') or 'none'} | "
         f"pending {d.end_codes.get('pending') or 'none'} | MIL {d.end_codes.get('mil')}"

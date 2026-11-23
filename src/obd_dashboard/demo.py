@@ -9,6 +9,7 @@ import threading
 from dataclasses import asdict
 from typing import Any, Dict, List, Optional, Tuple
 
+from obd_dashboard.outcome import DriveTally
 from obd_dashboard.types import Sink
 from obd_dashboard.userconfig import DEFAULT_THRESHOLDS, Thresholds
 
@@ -131,7 +132,8 @@ def run_demo(
         "units": {n: u for n, _, u, _ in DEMO_SENSORS if u}, "misfire0": 3.0,
         "sensors": [{"name": n, "desc": d, "fast": f} for n, d, _, f in DEMO_SENSORS],
     })  # fmt: skip
-    car, t, drill_sent = DemoCar(seed), 0.0, False
+    car, t, drill_sent, tally = DemoCar(seed), 0.0, False, DriveTally()
+    loops = 0
     while not stop.is_set():
         values = car.step(t)
         alerts: Dict[str, List[str]] = {}
@@ -146,6 +148,21 @@ def run_demo(
             "misfire": dict(car.misfire), "misfire0": 3.0, "warm": dict(car.warm),
             "start_cool": car.start_cool,
         })  # fmt: skip
+        tally.add(
+            t, speed_kph=values.get("SPEED"), coolant_c=values.get("COOLANT_TEMP"), rpm=values.get("RPM"),
+            volts=values.get("battery_v"), ltft_pct=values.get("LONG_FUEL_TRIM_1"),
+        )  # fmt: skip
+        loops += 1
         t += 1.0
         stop.wait(tick)
-    sink.on_status("finished", "Session finished", {"csv": None, "report": None, "summary": ["Demo session ended."]})
+    sink.on_status(
+        "finished", "Session finished",
+        {
+            "csv": None, "report": None, "summary": ["Demo session ended."],
+            "outcome": tally.outcome(
+                verdict="warn" if t > DRILL_WINDOW_S[0] else "ok", duration_s=t, rows=loops,
+                start_coolant_c=car.start_cool, warm_s={k: float(v) for k, v in car.warm.items()},
+                alerts=[DRILL_MESSAGE] if drill_sent else [], stored=[], pending=[], mil=False, demo=True,
+            ),
+        },
+    )  # fmt: skip

@@ -40,7 +40,7 @@ export default function StartCard({ status, serverUp }) {
 
   return (
     <div className="card start">
-      <h2>{finished ? 'Session finished' : 'Ready to monitor your car'}</h2>
+      <h2>{finished ? 'Start another session' : 'Ready to monitor your car'}</h2>
       <p className="muted">
         Plug the adapter into the OBD port (MS/HS switch on <b>HS</b>), start the engine, then press Start.
       </p>
@@ -48,17 +48,6 @@ export default function StartCard({ status, serverUp }) {
       {failed && (
         <div className="alert bad">
           <span>{status.message}</span>
-        </div>
-      )}
-
-      {finished && status.result && (
-        <div className="summary">
-          {status.result.csv && (
-            <p className="muted small">
-              Saved <code>{status.result.csv}</code> and <code>{status.result.report}</code>
-            </p>
-          )}
-          <pre>{(status.result.summary || []).join('\n')}</pre>
         </div>
       )}
 

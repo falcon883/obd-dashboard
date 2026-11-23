@@ -116,7 +116,7 @@ The **Settings** button (top right) opens two tabs:
   Temperatures show in your chosen unit. Pick *All cars* to change the defaults, or pick one car to give it its own
   limits (a diesel and a petrol car do not share the same normal). The blue bar marks what you changed; `↺` puts a
   value back.
-- **Advanced**: beeps, the online make/model lookup, polling speed, trouble-code check interval, reconnect behaviour.
+- **Advanced**: beeps, the online make/model lookup, polling speed and fast adapter mode, trouble-code check interval, reconnect behaviour.
 
 Changes apply from the next session. They are saved in `logs/settings.json` (only what you changed, so new
 defaults in a future update still reach you), and each report starts with the limits it ran under.
@@ -132,6 +132,7 @@ defaults in a future update still reach you), and each report starts with the li
       support.py     the `support` command (anonymous diagnostics file)
       garage.py      per-car folders, profiles, safe downloads
       history.py     per-drive numbers from the CSV logs (trends)
+      outcome.py     the end-of-drive summary numbers
       vin.py         VIN -> year/make offline, model/engine via NHTSA
       report.py      CSV columns, report file, end-of-run summary
       session.py     the logging session (connect -> baseline -> loop -> summary)

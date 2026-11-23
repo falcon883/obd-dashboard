@@ -22,6 +22,14 @@ function niceStep(range, n) {
   return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag
 }
 
+const MAX_POINTS = 600 // more than this is invisible on a chart this size and only slows the page down
+
+function thin(rows) {
+  if (rows.length <= MAX_POINTS) return rows
+  const step = Math.ceil(rows.length / MAX_POINTS)
+  return rows.filter((_, i) => i % step === 0 || i === rows.length - 1)
+}
+
 /**
  * Small live line chart (plain SVG, no chart library).
  * rows: [{ t, v }]  series: [{ label, color, get: (v) => number | null }]
@@ -50,7 +58,7 @@ export default function LineChart({
     const tmax = rows.length ? rows[rows.length - 1].t : 0
     const x0 = rows.length ? Math.max(rows[0].t, tmax - windowSec) : 0
     const x1 = Math.max(x0 + windowSec, tmax)
-    const vis = rows.filter((r) => r.t >= x0)
+    const vis = thin(rows.filter((r) => r.t >= x0))
     const vals = series.map((s) => vis.map((r) => s.get(r.v)))
     let lo = yMin
     let hi = yMax

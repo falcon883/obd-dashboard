@@ -12,8 +12,10 @@ class Tuning:
     """Polling behaviour. Tests shrink these so a session runs in milliseconds."""
 
     extra_per_loop: int = 4  # slower sensors refreshed per loop (round-robin)
+    steady_every: float = 1.0  # seconds between reads of the steady sensors (coolant, long-term trim, voltage)
     slow_every: float = 60.0  # seconds between trouble-code + misfire-counter checks
-    target_loop: float = 1.0  # seconds per CSV row
+    target_loop: float = 0.25  # fewest seconds per CSV row; the adapter sets the real pace
+    fast_adapter: bool = True  # python-OBD "fast" mode: the adapter answers as soon as the car has replied
     lost_after: int = 15  # empty loops in a row before the link/engine is considered gone
     reconnect_tries: int = 3
     reconnect_wait: float = 5.0  # seconds between reconnect attempts

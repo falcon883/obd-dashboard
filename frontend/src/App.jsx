@@ -2,10 +2,12 @@ import { useMemo, useState } from 'react'
 import useObdStream from './hooks/useObdStream.js'
 import { api } from './api.js'
 import { COLORS, carLine, fmt, fmtDuration, limitsOf, makeUnits } from './format.js'
+import { streamRate } from './summary.js'
 import Gauge from './components/Gauge.jsx'
 import LineChart from './components/LineChart.jsx'
 import Garage from './components/Garage.jsx'
 import History from './components/History.jsx'
+import SessionSummary from './components/SessionSummary.jsx'
 import Settings from './components/Settings.jsx'
 import StartCard from './components/StartCard.jsx'
 import {
@@ -96,6 +98,9 @@ export default function App() {
 
   const showStart = !running
   const hasData = !!last
+  const showSummary = status.state === 'finished' && !!status.result?.outcome
+  const showLive = running || (hasData && !showSummary)
+  const rate = running ? streamRate(rows) : null
 
   return (
     <div className="app">
@@ -210,11 +215,14 @@ export default function App() {
 
       {view === 'history' && <History U={U} info={info} onClose={() => setView('dashboard')} />}
       {view === 'settings' && <Settings U={U} running={running} onClose={() => setView('dashboard')} />}
+      {view === 'dashboard' && showSummary && (
+        <SessionSummary status={status} info={info} rows={rows} U={U} onHistory={() => setView('history')} />
+      )}
       {view === 'dashboard' && showStart && <StartCard status={status} serverUp={serverUp} />}
       {view === 'dashboard' && showStart && <Garage serverUp={serverUp} status={status} />}
-      {view === 'dashboard' && hasData && <AlertBanner last={last} />}
+      {view === 'dashboard' && hasData && !showSummary && <AlertBanner last={last} />}
 
-      {view === 'dashboard' && (running || hasData) && (
+      {view === 'dashboard' && showLive && (
         <div className="layout">
           <main>
             <section className="gauges">
@@ -440,6 +448,9 @@ export default function App() {
                   </span>
                 )}
                 {info.demo && <span>Simulated data — nothing is being saved.</span>}
+                {rate != null && (
+                  <span title="How often the car answers">Updating {fmt(rate, 1)} times a second</span>
+                )}
               </footer>
             )}
           </main>

@@ -12,6 +12,7 @@ from typing import Any, Callable, Dict, List, Optional
 from obd_dashboard import __version__, connection, readers
 from obd_dashboard.garage import VERDICTS, Car, Garage
 from obd_dashboard.notify import beep
+from obd_dashboard.outcome import DriveTally
 from obd_dashboard.readers import C, SensorPlan, fmt_monitors, fmt_supported
 from obd_dashboard.report import SessionFiles, Stat, SummaryData, column_name, csv_fields, render_summary
 from obd_dashboard.rules import RuleState, evaluate
@@ -24,6 +25,8 @@ log = logging.getLogger(__name__)
 
 WARM_CHECKPOINTS_C = (70, 80, 85)
 DRIVING_KPH = 15
+FAST_TRIAL_LOOPS = 10  # fast mode is watched for this many cycles, then trusted
+FAST_TRIAL_BAD = 3  # bad cycles in a row that make the session drop back to standard mode
 KPH_TO_MPH = 0.621371
 NO_CAR_MESSAGE = (
     "Could not talk to the car. Check: adapter fully seated, MS/HS switch on HS, "
@@ -111,6 +114,11 @@ class Session:
         self.loops = 0
         self._rotate = 0
         self._empty = 0
+        self._last_steady = float("-inf")
+        self.tally = DriveTally()
+        self._fast_on = False  # python-OBD "fast" mode is on for this session
+        self._fast_expect = 0  # how many of the fast sensors answered during the baseline
+        self._fast_bad = 0  # cycles in a row (early in the session) where far fewer than that answered
         self._columns: Dict[str, str] = {}
         self._t0 = 0.0
 
@@ -133,6 +141,7 @@ class Session:
             with SessionFiles(self.garage.car_dir(self.car.vin)) as files:
                 self.files = files
                 self._baseline()
+                self._start_fast_mode()
                 self._loop()
                 self._finish()
         finally:
@@ -214,15 +223,50 @@ class Session:
         self._started = datetime.datetime.now().isoformat(timespec="seconds")
         self.sink.on_info(self._info())
 
+    def _start_fast_mode(self) -> None:
+        """Switch python-OBD to "fast" mode once the slow, careful start-up is done.
+
+        In fast mode the adapter stops waiting as soon as the car has answered, which is where most of the
+        time per reading goes. The first few cycles are watched: if the sensors that answered during the
+        baseline suddenly stop answering, this adapter does not like it and the session drops back.
+        """
+        files, p = self._files(), self.plan
+        self._fast_expect = sum(self.readings.get(c.name) is not None for c in p.fast)
+        if not self.tune.fast_adapter or self._fast_expect == 0:
+            files.log("Adapter mode: standard")
+            return
+        try:
+            self.conn.fast = True
+        except Exception:  # noqa: BLE001 - a connection object that does not allow it just stays in standard mode
+            files.log("Adapter mode: standard")
+            return
+        self._fast_on = True
+        files.log("Adapter mode: fast")
+
+    def _check_fast_mode(self) -> None:
+        if not self._fast_on or self.loops >= FAST_TRIAL_LOOPS:
+            return
+        answered = sum(self.readings.get(c.name) is not None for c in self.plan.fast)
+        self._fast_bad = self._fast_bad + 1 if answered * 2 < self._fast_expect else 0
+        if self._fast_bad < FAST_TRIAL_BAD:
+            return
+        self.conn.fast = False
+        self._fast_on, self._fast_bad = False, 0
+        msg = "Fast adapter mode did not work with this adapter; switched to the standard mode."
+        log.warning(msg)
+        self._files().log(f"Adapter mode: standard ({msg})")
+
     def _info(self) -> Dict[str, Any]:
         files = self._files()
         return {
-            "car": self.car.to_dict(), "thresholds": asdict(self.limits),
+            "car": self.car.to_dict(), "thresholds": asdict(self.limits), "started": self._started,
             "port": self.port, "baud": self.baud, "protocol": self.conn.protocol_name(),
             "csv": str(files.csv_path), "report": str(files.report_path),
             "static": {k: str(v) for k, v in self.static_start.items()},
             "units": dict(self.units), "misfire0": self.state.misfire0,
-            "sensors": [{"name": c.name, "desc": c.desc, "fast": c in self.plan.fast} for c in self.plan.polled],
+            "sensors": [
+                {"name": c.name, "desc": c.desc, "fast": c not in self.plan.rest} for c in self.plan.polled
+            ],
         }  # fmt: skip
 
     # ---- main loop -------------------------------------------------------------
@@ -232,6 +276,7 @@ class Session:
         while not self.stop.is_set():
             tick = self._clock()
             got = self._poll_cycle()
+            self._check_fast_mode()
             if not self._link_ok(got):
                 break
             self._update_state()
@@ -247,6 +292,9 @@ class Session:
     def _poll_cycle(self) -> int:
         p = self.plan
         got = self._poll(p.fast)
+        if p.steady and self._clock() - self._last_steady >= self.tune.steady_every:
+            self._last_steady = self._clock()
+            got += self._poll(p.steady)
         if p.rest:
             n = min(self.tune.extra_per_loop, len(p.rest))
             got += self._poll([p.rest[(self._rotate + i) % len(p.rest)] for i in range(n)])
@@ -307,7 +355,7 @@ class Session:
             st.drove = True
         stft = self.readings.get("SHORT_FUEL_TRIM_1")
         if isinstance(stft, float):
-            st.stft.append(stft)
+            st.add_stft(now, stft, self.limits.stft_window)
         if cool is not None:
             for threshold in WARM_CHECKPOINTS_C:
                 if cool >= threshold:
@@ -357,7 +405,11 @@ class Session:
         now = datetime.datetime.now().isoformat(timespec="seconds")
         cool, spd = self._reading("COOLANT_TEMP"), self._reading("SPEED")
         short, long_ = self._reading("SHORT_FUEL_TRIM_1"), self._reading("LONG_FUEL_TRIM_1")
-        row: Dict[str, Any] = {"time": now, "elapsed_s": round(elapsed, 1)}
+        self.tally.add(
+            elapsed, speed_kph=spd, coolant_c=cool, rpm=self._reading("RPM"), volts=r.get("battery_v"),
+            ltft_pct=long_,
+        )  # fmt: skip
+        row: Dict[str, Any] = {"time": now, "elapsed_s": round(elapsed, 2)}
         row.update({col: r.get(name) for name, col in self._columns.items()})
         row.update(
             battery_v=r.get("battery_v"),
@@ -370,7 +422,7 @@ class Session:
         self._files().write_row(row)
         self.loops += 1
         return {
-            "t": round(elapsed, 1), "ts": now, "values": dict(r),
+            "t": round(elapsed, 2), "ts": now, "values": dict(r),
             "alerts": {k: list(a) for k, a in alerts.items()},
             "codes": {"mil": st.mil, "stored": list(st.stored), "pending": list(st.pending)},
             "misfire": dict(st.misfire), "misfire0": st.misfire0,
@@ -420,7 +472,15 @@ class Session:
         log.info("Saved %s and %s", files.csv_path, files.report_path)
         self.sink.on_status(
             "finished", "Session finished",
-            {"csv": str(files.csv_path), "report": str(files.report_path), "summary": summary},
+            {
+                "csv": str(files.csv_path), "report": str(files.report_path), "summary": summary,
+                "outcome": self.tally.outcome(
+                    verdict=VERDICTS[self.worst], duration_s=self._clock() - self._t0, rows=self.loops,
+                    start_coolant_c=self.start_cool, warm_s=self.warm, alerts=self.raised,
+                    stored=end_codes.get("stored", []), pending=end_codes.get("pending", []), mil=end_codes.get("mil"),
+                    monitor_failures=failures, end_answered=end_answered,
+                ),
+            },
         )  # fmt: skip
 
     # ---- helpers -------------------------------------------------------------------

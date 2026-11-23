@@ -18,7 +18,12 @@ from obd_dashboard.userconfig import UserConfig
 
 log = logging.getLogger(__name__)
 
-HISTORY_ROWS = 900  # ~15 min at 1 row/s, replayed to a tab that connects mid-session
+HISTORY_SECONDS = 900  # the last 15 minutes are replayed to a tab that connects mid-session
+HISTORY_ROWS = 6000  # ...but never more than this many rows, however fast the car answers
+# Only what the live charts draw. The tiles and tables read the latest row, which carries everything.
+CHART_KEYS = (
+    "RPM", "SPEED", "COOLANT_TEMP", "SHORT_FUEL_TRIM_1", "LONG_FUEL_TRIM_1", "ENGINE_LOAD", "THROTTLE_POS", "battery_v",
+)  # fmt: skip
 EVENT_ROWS = 300
 CLIENT_QUEUE = 500
 
@@ -90,7 +95,9 @@ class Hub(BaseSink):
     def on_row(self, row: RowPayload) -> None:
         with self._lock:
             self._last = row
-            self._history.append({"t": row["t"], "v": row["values"]})
+            self._history.append({"t": row["t"], "v": {k: row["values"][k] for k in CHART_KEYS if k in row["values"]}})
+            while self._history and row["t"] - self._history[0]["t"] > HISTORY_SECONDS:
+                self._history.popleft()
         self._broadcast("row", row)
 
     def on_event(self, event: EventPayload) -> None:

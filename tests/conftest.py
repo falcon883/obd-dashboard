@@ -40,7 +40,13 @@ class RecordingSink(BaseSink):
 
 
 FAST_TUNING = Tuning(
-    extra_per_loop=3, slow_every=0.0, target_loop=0.0, lost_after=3, reconnect_tries=2, reconnect_wait=0.0
+    extra_per_loop=3,
+    steady_every=0.0,
+    slow_every=0.0,
+    target_loop=0.0,
+    lost_after=3,
+    reconnect_tries=2,
+    reconnect_wait=0.0,
 )
 
 

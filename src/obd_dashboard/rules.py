@@ -17,13 +17,14 @@ Alerts = Dict[str, Alert]
 
 # Cranking and the first second after start dip the voltage for a moment. Only a reading that stays bad is a problem.
 BATTERY_SUSTAIN_S = 5.0
+STFT_FULL_SHARE = 0.8  # the short-term trim average needs this share of its window before it can alert
 
 
 @dataclass
 class RuleState:
     """Facts the rules need beyond the current reading."""
 
-    stft: Deque[float] = field(default_factory=lambda: deque(maxlen=DEFAULT_THRESHOLDS.stft_window))
+    stft: Deque[Tuple[float, float]] = field(default_factory=deque)  # (monotonic seconds, short-term trim %)
     drove: bool = False
     run_start: Optional[float] = None  # monotonic seconds when the engine first ran
     misfire0: Optional[float] = None  # misfire total at the start of the session
@@ -36,7 +37,13 @@ class RuleState:
 
     @classmethod
     def for_limits(cls, t: Thresholds) -> RuleState:
-        return cls(stft=deque(maxlen=t.stft_window))
+        return cls()
+
+    def add_stft(self, now: float, value: float, window_s: float) -> None:
+        """Keep the last `window_s` seconds of short-term trim, however fast the readings come in."""
+        self.stft.append((now, value))
+        while self.stft and now - self.stft[0][0] > window_s:
+            self.stft.popleft()
 
 
 def _num(readings: Readings, key: str) -> Optional[float]:
@@ -95,8 +102,8 @@ def _fuel_trim(r: Readings, s: RuleState, t: Thresholds) -> Alerts:
         kind = "lean (vacuum leak / MAF / low fuel pressure)" if lt > 0 else "rich (injectors / O2 / fuel leak)"
         level = "CRIT" if abs(lt) >= t.ltft_crit_pct else "WARN"
         out["ltft"] = Alert(level, f"Long-term fuel trim {lt:+.1f}% -> {kind}")
-    if len(s.stft) >= t.stft_window:
-        avg = statistics.mean(s.stft)
+    if s.stft and s.stft[-1][0] - s.stft[0][0] >= STFT_FULL_SHARE * t.stft_window:  # enough history to trust
+        avg = statistics.mean(v for _, v in s.stft)
         if abs(avg) >= t.stft_warn_pct:
             out["stft"] = Alert("WARN", f"Short-term fuel trim averaging {avg:+.1f}%")
     return out

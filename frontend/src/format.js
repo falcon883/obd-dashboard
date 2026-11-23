@@ -26,7 +26,11 @@ export function makeUnits(sys) {
 
 export function fmt(v, d = 0) {
   if (v == null || Number.isNaN(v)) return '—'
-  return Number(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d })
+  const n = Number(v)
+  return (Object.is(n, -0) || (n < 0 && Math.abs(n) < 0.5 * 10 ** -d) ? 0 : n).toLocaleString('en-US', {
+    minimumFractionDigits: d,
+    maximumFractionDigits: d,
+  })
 }
 
 export function fmtDuration(sec) {

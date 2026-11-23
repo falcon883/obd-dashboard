@@ -101,9 +101,9 @@ def test_a_car_can_have_its_own_limits_on_top_of_the_global_ones(config):
 
 
 def test_advanced_changes_are_sparse(config):
-    config.set_advanced({"beep": False, "target_loop": 1.0, "slow_every": 30})
+    config.set_advanced({"beep": False, "target_loop": 0.25, "slow_every": 30})
     assert config.advanced_overrides() == {"beep": False, "slow_every": 30}
-    assert config.advanced()["target_loop"] == 1.0 and config.advanced()["beep"] is False
+    assert config.advanced()["target_loop"] == 0.25 and config.advanced()["beep"] is False
 
 
 @pytest.mark.parametrize(
@@ -202,6 +202,7 @@ def test_thermostat_check_uses_the_configured_minutes():
 def test_trim_average_window_comes_from_the_limits():
     t = Thresholds(stft_window=5)
     state = RuleState.for_limits(t)
-    assert state.stft.maxlen == 5
-    state.stft.extend([20.0] * 5)
-    assert "stft" in evaluate({}, state, 0.0, t)
+    for second in range(6):
+        state.add_stft(float(second), 20.0, t.stft_window)
+    assert "stft" in evaluate({}, state, 6.0, t)
+    assert "stft" not in evaluate({}, state, 6.0)  # the default 30 s window is not full yet

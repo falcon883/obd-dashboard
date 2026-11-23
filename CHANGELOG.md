@@ -17,6 +17,18 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
   complete request, decodes it correctly, and stops asking after three silent answers when no code is stored.
   Not yet confirmed on a real car.
 
+### Changed
+- Faster polling. The old loop waited a fixed second per row, and python-OBD's "fast" mode was off. Now the adapter
+  answers as soon as the car has replied (switched on after the careful start-up, and it turns itself off if the first
+  readings fail), rows come as fast as the adapter allows (at least 0.25 s apart, adjustable), and the sensors are
+  read in tiers: speed, RPM, load, throttle, manifold pressure, timing and short-term trim every cycle; coolant,
+  long-term trim and voltage once a second; the rest take turns. The report says which mode ran and the rows per second.
+- The short-term trim average is now measured in seconds (default 30) instead of readings, so it does not shrink when
+  the rows come faster.
+- The live charts keep the last 15 minutes whatever the row rate, and thin out long windows.
+- After a session ends you now get a summary screen (verdict, distance, hottest coolant, warm-up, charging voltage,
+  what happened, charts of the drive, report and CSV links) instead of the frozen dashboard.
+
 ### Added
 - `obd-dashboard support`: writes an anonymous JSON report (adapter, protocol, supported sensors, trouble codes, a raw
   freeze-frame probe, tried both with and without the frame number) to attach to bug reports.

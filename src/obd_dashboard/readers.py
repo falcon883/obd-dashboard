@@ -15,11 +15,13 @@ from obd_dashboard.types import Codes
 log = logging.getLogger(__name__)
 C = obd.commands
 
-# Read every loop.
+# Read every loop: they change in fractions of a second and drive the gauges.
 FAST = [
-    "RPM", "SPEED", "ENGINE_LOAD", "COOLANT_TEMP", "THROTTLE_POS",
-    "SHORT_FUEL_TRIM_1", "LONG_FUEL_TRIM_1", "SHORT_FUEL_TRIM_2", "LONG_FUEL_TRIM_2",
-    "INTAKE_PRESSURE", "TIMING_ADVANCE", "CONTROL_MODULE_VOLTAGE",
+    "RPM", "SPEED", "ENGINE_LOAD", "THROTTLE_POS", "INTAKE_PRESSURE", "TIMING_ADVANCE", "SHORT_FUEL_TRIM_1",
+]  # fmt: skip
+# Read about once a second: they move slowly, so a fresh reading every loop would only slow the fast ones down.
+STEADY = [
+    "COOLANT_TEMP", "LONG_FUEL_TRIM_1", "SHORT_FUEL_TRIM_2", "LONG_FUEL_TRIM_2", "CONTROL_MODULE_VOLTAGE",
 ]  # fmt: skip
 # Read once at the start and once at the end (they change slowly or never).
 STATIC = [
@@ -210,30 +212,36 @@ def read_counters(conn: Any, cmds: Sequence[Any]) -> Dict[str, Any]:
 @dataclass
 class SensorPlan:
     fast: List[Any] = field(default_factory=list)
+    steady: List[Any] = field(default_factory=list)
     rest: List[Any] = field(default_factory=list)
     statics: List[Any] = field(default_factory=list)
     monitors: List[Any] = field(default_factory=list)
 
     @property
     def polled(self) -> List[Any]:
-        return self.fast + self.rest
+        return self.fast + self.steady + self.rest
 
 
 def plan_sensors(conn: Any) -> SensorPlan:
     """Work out which sensors this particular car supports and how often to read each."""
     supported = conn.supported_commands
     fast = [c for n in FAST if (c := getattr(C, n, None)) is not None and conn.supports(c)]
+    steady = [c for n in STEADY if (c := getattr(C, n, None)) is not None and conn.supports(c)]
     rest = sorted(
         (
             c
             for c in supported
-            if c.mode == 1 and c.name not in SKIP and c not in fast and not c.name.startswith(("PIDS_", "MIDS_"))
+            if c.mode == 1
+            and c.name not in SKIP
+            and c not in fast
+            and c not in steady
+            and not c.name.startswith(("PIDS_", "MIDS_"))
         ),
         key=lambda c: c.pid or 0,
     )
     statics = [c for n in STATIC if (c := getattr(C, n, None)) is not None and conn.supports(c)]
     monitors = sorted((c for c in supported if c.name.startswith("MONITOR_")), key=lambda c: c.name)
-    return SensorPlan(fast, rest, statics, monitors)
+    return SensorPlan(fast, steady, rest, statics, monitors)
 
 
 def car_commands(conn: Any) -> List[Any]:

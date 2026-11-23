@@ -131,3 +131,12 @@ describe('limits come from the session, not from constants', () => {
     expect(byId(buildChecks({}, last, U, strictMisfire), 'misfire').status).toBe('warn')
   })
 })
+
+describe('fmt', () => {
+  it('never prints a minus sign in front of zero', () => {
+    expect(fmt(-0)).toBe('0')
+    expect(fmt(-0.04, 1)).toBe('0.0')
+    expect(fmt(-0.4, 1)).toBe('-0.4')
+    expect(fmt(null)).toBe('—')
+  })
+})

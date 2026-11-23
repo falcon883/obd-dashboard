@@ -304,3 +304,63 @@ def test_saved_advanced_options_override_tuning_but_cli_off_switches_win(setting
     # saved beep=False silences the default notifier even though the command line did not say --no-beep
     assert session._notify.__name__ != "beep"
     session.run()
+
+
+# --- polling speed ----------------------------------------------------------------------------------------------
+
+FAST_SENSORS = {"RPM", "SPEED", "ENGINE_LOAD", "THROTTLE_POS", "INTAKE_PRESSURE", "TIMING_ADVANCE", "SHORT_FUEL_TRIM_1"}
+
+
+class SwitchCar(FakeCar):
+    """Remembers python-OBD's `fast` switch and counts queries. With `breaks_fast`, the fast sensors go quiet in it."""
+
+    def __init__(self, breaks_fast=False):
+        super().__init__()
+        self.fast = False
+        self.breaks_fast = breaks_fast
+        self.asked: dict[str, int] = {}
+
+    def query(self, cmd, force=False):
+        self.asked[cmd.name] = self.asked.get(cmd.name, 0) + 1
+        if self.breaks_fast and self.fast and cmd.name in FAST_SENSORS:
+            return obd.OBDResponse()
+        return super().query(cmd, force)
+
+
+def _report_of(sink):
+    return Path(sink.statuses[-1][2]["report"]).read_text()
+
+
+def test_fast_adapter_mode_is_on_after_the_careful_start(settings):
+    car = SwitchCar()
+    _, sink = run_session(replace(settings, com="FAKE0"), car, rows=12)
+    assert car.fast is True and "Adapter mode: fast" in _report_of(sink)
+
+
+def test_fast_adapter_mode_can_be_switched_off(settings):
+    car = SwitchCar()
+    cfg = replace(settings, com="FAKE0", tuning=replace(settings.tuning, fast_adapter=False))
+    _, sink = run_session(cfg, car, rows=12)
+    assert car.fast is False and "Adapter mode: standard" in _report_of(sink)
+
+
+def test_session_drops_back_when_fast_mode_makes_the_sensors_go_quiet(settings):
+    car = SwitchCar(breaks_fast=True)
+    session, sink = run_session(replace(settings, com="FAKE0"), car, rows=20)
+    assert car.fast is False and "switched to the standard mode" in _report_of(sink)
+    assert sink.rows[-1]["values"]["RPM"] is not None  # and the readings are back
+    assert "lost" not in sink.states
+
+
+def test_steady_sensors_are_read_less_often_than_the_fast_ones(settings):
+    car = SwitchCar()
+    cfg = replace(settings, com="FAKE0", tuning=replace(settings.tuning, steady_every=1000.0))
+    run_session(cfg, car, rows=15)
+    assert car.asked["RPM"] >= 15 and car.asked["COOLANT_TEMP"] <= 3  # the start-up pass, the first cycle, the end
+    assert car.asked["CONTROL_MODULE_VOLTAGE"] <= 3
+
+
+def test_rows_carry_fractions_of_a_second(settings):
+    _, sink = run_session(replace(settings, com="FAKE0"), FakeCar(), rows=5)
+    assert all(isinstance(row["t"], float) for row in sink.rows)
+    assert all(abs(row["t"] * 100 - round(row["t"] * 100)) < 1e-6 for row in sink.rows)  # two decimals
