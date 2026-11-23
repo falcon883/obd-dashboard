@@ -19,7 +19,7 @@ from serial.tools import list_ports
 
 from obd_dashboard import __version__
 from obd_dashboard.connection import link_info, open_connection
-from obd_dashboard.readers import SensorPlan, plan_sensors, query, raw_text
+from obd_dashboard.readers import SensorPlan, car_commands, plan_sensors, query, raw_text
 from obd_dashboard.vin import WMI_MAKES, model_year, normalize_vin
 
 SCHEMA = 1
@@ -73,7 +73,7 @@ def _supported(conn: Any, plan: SensorPlan) -> List[Dict[str, Any]]:
     """Every command the car lists, and for the live sensors whether a real read returned data."""
     live = {c.name for c in plan.polled}
     out = []
-    for cmd in sorted(conn.supported_commands, key=lambda c: (c.mode, c.pid or 0, c.name)):
+    for cmd in car_commands(conn):
         entry: Dict[str, Any] = {"mode": cmd.mode, "pid": f"{(cmd.pid or 0):02X}", "name": cmd.name}
         if cmd.name in live:
             entry["answers"] = not query(conn, cmd).is_null()

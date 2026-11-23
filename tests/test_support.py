@@ -102,3 +102,11 @@ def test_cli_wires_up_the_support_command(monkeypatch: pytest.MonkeyPatch, tmp_p
     out = tmp_path / "x.json"
     assert cli.main(["support", "--com", "COM4", "--baud", "38400", "--out", str(out)]) == 0
     assert seen == {"port": "COM4", "baud": 38400, "out": out}
+
+
+def test_adapter_commands_without_a_mode_do_not_break_the_report(tmp_path: Path) -> None:
+    """A real car's supported list also holds ELM_VERSION and ELM_VOLTAGE, which have no mode or pid."""
+    car = FakeCar()
+    assert any(c.mode is None for c in car.supported_commands)
+    _, report = _run(tmp_path, car)
+    assert all(entry["name"] not in {"ELM_VERSION", "ELM_VOLTAGE"} for entry in report["supported"])

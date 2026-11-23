@@ -16,7 +16,8 @@ SUPPORTED_NAMES = [
     "FUEL_TYPE", "WARMUPS_SINCE_DTC_CLEAR", "STATUS", "GET_DTC", "GET_CURRENT_DTC", "MONITOR_MISFIRE_GENERAL",
     "MONITOR_MISFIRE_CYLINDER_1", "MONITOR_EVAP_150",
 ]  # fmt: skip
-SUPPORTED = {getattr(C, n) for n in SUPPORTED_NAMES}
+# python-OBD also lists its two adapter commands (no mode, no pid) among a real car's supported commands.
+SUPPORTED = {getattr(C, n) for n in SUPPORTED_NAMES} | {C.ELM_VERSION, C.ELM_VOLTAGE}
 
 
 class R:

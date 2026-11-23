@@ -181,9 +181,19 @@ def plan_sensors(conn: Any) -> SensorPlan:
     return SensorPlan(fast, rest, statics, monitors)
 
 
+def car_commands(conn: Any) -> List[Any]:
+    """The commands the car itself supports, sorted by mode and PID.
+
+    python-obd also lists its two adapter commands (ELM_VERSION, ELM_VOLTAGE) in `supported_commands`.
+    They have no mode and no PID, so they are left out here.
+    """
+    cmds = [c for c in conn.supported_commands if c.mode is not None]
+    return sorted(cmds, key=lambda c: (c.mode, c.pid or 0, c.name))
+
+
 def fmt_supported(conn: Any) -> List[str]:
     """Every command the car says it supports (its own PID bitmasks), by mode, e.g. '01 0C RPM'."""
-    cmds = sorted((c for c in conn.supported_commands), key=lambda c: (c.mode, c.pid or 0, c.name))
+    cmds = car_commands(conn)
     return [f"  {c.mode:02d} {(c.pid or 0):02X}  {c.name:<30} {c.desc}" for c in cmds] or ["  (none reported)"]
 
 
