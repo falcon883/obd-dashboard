@@ -13,7 +13,7 @@ from obd_dashboard.garage import Garage
 from obd_dashboard.session import Session
 from obd_dashboard.vin import CarInfo
 from tests.conftest import RecordingSink
-from tests.fakes import FakeCar
+from tests.fakes import FakeCar, Q, R
 
 
 def run_session(settings, car, rows=30, connector=None):
@@ -101,6 +101,72 @@ def test_gives_up_after_failed_reconnects_but_still_writes_summary(settings):
     _, sink = run_session(replace(settings, com="FAKE0", baud=38400), None, rows=1000, connector=connector)
     assert sink.states[-1] == "finished" and len(attempts) == 1 + settings.tuning.reconnect_tries
     assert "=== SUMMARY ===" in Path(sink.statuses[-1][2]["report"]).read_text()
+
+
+class CodedCar(FakeCar):
+    """Has a stored code from the first query on, like the friend's 2013 Sonata with P0456."""
+
+    def query(self, cmd):
+        response = super().query(cmd)
+        if cmd.name == "GET_DTC" and not response.is_null():
+            return R([("P0456", "Evaporative Emission System Leak Detected (very small leak)")])
+        return response
+
+
+class VoltCar(FakeCar):
+    """Reports the given module and adapter voltages."""
+
+    def __init__(self, module, adapter):
+        super().__init__()
+        self.volts = {"CONTROL_MODULE_VOLTAGE": module, "ELM_VOLTAGE": adapter}
+
+    def query(self, cmd):
+        if cmd.name in self.volts:
+            return R(Q(self.volts[cmd.name], "volt"))
+        return super().query(cmd)
+
+
+def _battery_values(settings, car):
+    _, sink = run_session(replace(settings, com="FAKE0", baud=38400), car, rows=6)
+    return [row["values"]["battery_v"] for row in sink.rows], sink
+
+
+def test_battery_uses_the_adapter_when_the_computer_reports_zero_volts(settings):
+    """Seen on the real car: the computer reads 0.0 V for a few seconds around key-off."""
+    values, sink = _battery_values(settings, VoltCar(module=0.0, adapter=12.7))
+    assert set(values) == {12.7}
+    assert not any(isinstance(e, dict) and "battery" in e["msg"].lower() for e in sink.events)
+
+
+def test_battery_reading_is_empty_when_neither_source_is_plausible(settings):
+    values, sink = _battery_values(settings, VoltCar(module=0.0, adapter=0.1))
+    assert set(values) == {None}
+    assert not any(isinstance(e, dict) and "battery" in e["msg"].lower() for e in sink.events)
+
+
+def test_codes_and_failures_stay_in_the_report_when_the_car_goes_quiet(settings):
+    """Real report: 'Codes at end: none' after ignition off, although P0456 and a failed EVAP test were showing."""
+    car = CodedCar(dead_after=8)
+    attempts = []
+
+    def connector(_p, _b):
+        attempts.append(1)
+        return car if len(attempts) == 1 else None
+
+    _, sink = run_session(replace(settings, com="FAKE0", baud=38400), None, rows=1000, connector=connector)
+    report_path = Path(sink.statuses[-1][2]["report"])
+    report = report_path.read_text()
+    assert "Codes at end: stored ['P0456" in report and "last known" in report
+    assert "Mode 06 failures (last known, car stopped answering): MONITOR_EVAP_150" in report
+    assert "(the car had stopped answering)" in report
+    summary = json.loads(report_path.with_name(report_path.name.replace("_report.txt", "_summary.json")).read_text())
+    assert summary["stored_codes"] == ["P0456 Evaporative Emission System Leak Detected (very small leak)"]
+
+
+def test_a_session_that_ends_normally_reports_the_real_end_state(settings):
+    _, sink = run_session(replace(settings, com="FAKE0", baud=38400), CodedCar(), rows=5)
+    report = Path(sink.statuses[-1][2]["report"]).read_text()
+    assert "last known" not in report and "Mode 06 failures at end:" in report
 
 
 def test_a_crashing_subscriber_never_stops_the_logger(settings):

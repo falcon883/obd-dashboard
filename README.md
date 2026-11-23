@@ -58,14 +58,20 @@ Logs are filed per car: `logs/<VIN>/<time>_data.csv`, `_report.txt`, `_summary.j
 
 ## Tested on
 
-| Car | Adapter | OS | Protocol | Status |
+| Car | Adapter | OS | Protocol | Result |
 |---|---|---|---|---|
-| 2016 Hyundai Sonata SE 2.4 GDI | ELM327 v1.5, CH340 USB | Windows | ISO 15765-4 CAN 11/500 | Works (the latest release is being re-checked on the car) |
+| 2016 Hyundai Sonata SE 2.4 GDI | ELM327 v1.5, CH340 USB | Windows | ISO 15765-4 CAN 11/500 | Works: 28 live sensors, Mode 06 self-tests, trouble codes, VIN |
+| 2013 Hyundai Sonata 2.4 | same adapter | Windows | ISO 15765-4 CAN 11/500 | Works: same set, and it read a stored code (P0456) and the check-engine light |
 
-That is one car so far. Most 2008+ cars should work, but how much each car reports varies a lot, and cheap adapters
-vary too. If you try it on yours, please tell us how it went with a
+Last checked on both cars in November 2026. That is two cars of the same make, so treat the list of cars that work
+as short. Most 2008+ cars should work, but how much each car reports varies a lot, and so do cheap adapters.
+If you try it on yours, please tell us how it went with a
 [compatibility report](https://github.com/falcon883/obd-dashboard/issues/new?template=compatibility_report.yml)
 and we will add it to this table. Run `obd-dashboard support` first and attach the file it writes.
+
+Known gaps: freeze-frame data (a snapshot the car stores when a code sets) came back empty on the car that had a
+stored code. It may be that the car did not keep one, or that the reply is not being read correctly. The `support`
+file now records the raw reply so this can be checked.
 
 ## Safety
 

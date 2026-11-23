@@ -102,6 +102,7 @@ class Session:
         self.units: Dict[str, str] = {}
         self.stats: Dict[str, Stat] = {}
         self.static_start: Dict[str, Any] = {}
+        self.monitors_start: Dict[str, Any] = {}
         self.active: Dict[str, Alert] = {}
         self.raised: List[str] = []
         self.worst = 0
@@ -196,6 +197,7 @@ class Session:
         self.state.misfire = readers.misfire_counts(monitors)
         self.state.misfire0 = self.state.misfire.get("total")
         self._apply_codes(readers.read_codes(conn))
+        self.monitors_start = monitors
         s = self.state
         log.info("MIL: %s | stored: %s | pending: %s", s.mil, s.stored or "none", s.pending or "none")
         files.log("\n=== CODES (start) ===")
@@ -249,11 +251,19 @@ class Session:
             n = min(self.tune.extra_per_loop, len(p.rest))
             got += self._poll([p.rest[(self._rotate + i) % len(p.rest)] for i in range(n)])
             self._rotate = (self._rotate + self.tune.extra_per_loop) % len(p.rest)
-        volts = self.readings.get("CONTROL_MODULE_VOLTAGE")
-        if volts is None:  # fall back to the adapter's own voltage reading
-            volts = readers.parse_value(C.ELM_VOLTAGE, readers.query(self.conn, C.ELM_VOLTAGE))[0]
-        self.readings["battery_v"] = volts
+        self.readings["battery_v"] = self._battery_voltage()
         return got
+
+    def _battery_voltage(self) -> Optional[float]:
+        """Battery voltage from the engine computer, else from the adapter, ignoring readings that cannot be real.
+
+        The computer reports 0.0 V while it winds down at key-off, and the adapter reads near 0 V once the
+        port loses power. Neither means a dead battery, so they count as "no reading".
+        """
+        volts = _plausible_volts(self.readings.get("CONTROL_MODULE_VOLTAGE"))
+        if volts is None:
+            volts = _plausible_volts(readers.parse_value(C.ELM_VOLTAGE, readers.query(self.conn, C.ELM_VOLTAGE))[0])
+        return volts
 
     def _poll(self, cmds: List[Any]) -> int:
         got = 0
@@ -316,7 +326,9 @@ class Session:
             files.log(f"  Freeze frame for new code(s) {fresh}:")
             files.log_lines(readers.freeze_frame(self.conn))
 
-    def _apply_codes(self, codes: Codes) -> None:
+    def _apply_codes(self, codes: Optional[Codes]) -> None:
+        if codes is None:  # the car did not answer: keep what we knew
+            return
         self.state.mil, self.state.stored, self.state.pending = codes["mil"], codes["stored"], codes["pending"]
 
     def _check_alerts(self) -> Dict[str, Alert]:
@@ -368,15 +380,20 @@ class Session:
     # ---- wrap-up -----------------------------------------------------------------
     def _finish(self) -> None:
         files, st = self._files(), self.state
-        end_codes: Dict[str, Any] = {"stored": [], "pending": [], "mil": None}
+        last_known = {"stored": list(st.stored), "pending": list(st.pending), "mil": st.mil}
+        end_codes: Dict[str, Any] = dict(last_known)
+        answered: Optional[Codes] = None
         monitors_end: Dict[str, Any] = {}
         static_end: Dict[str, Any] = {}
         if self.conn is not None:
-            end_codes = dict(readers.read_codes(self.conn))
+            answered = readers.read_codes(self.conn)
+            end_codes = dict(answered) if answered is not None else dict(last_known)
             monitors_end = readers.read_monitors(self.conn, self.plan.monitors)
             static_end = readers.read_counters(self.conn, self.plan.statics)
+        end_answered = self.conn is not None and bool(monitors_end or answered is not None)
+        shown = monitors_end or self.monitors_start  # if the car went quiet, the start results are the last known
 
-        failures = [f"{n}: {d}" for n, tests in monitors_end.items() for d, _, ok in tests if not ok]
+        failures = [f"{n}: {d}" for n, tests in shown.items() for d, _, ok in tests if not ok]
         summary = render_summary(SummaryData(
             worst=self.worst, duration_s=self._clock() - self._t0, loops=self.loops,
             start_cool=self.start_cool, warm=self.warm, end_codes=end_codes,
@@ -384,7 +401,7 @@ class Session:
             misfire_end=readers.misfire_counts(monitors_end).get("total", st.misfire.get("total")),
             monitor_failures=failures, alerts_raised=self.raised,
             sensors=[c.name for c in self.plan.polled], units=self.units, stats=self.stats,
-            static_start=self.static_start, static_end=static_end,
+            static_start=self.static_start, static_end=static_end, end_answered=end_answered,
         ))  # fmt: skip
         files.log_lines(summary)
         files.write_summary(
@@ -399,7 +416,7 @@ class Session:
             }
         )  # fmt: skip
         files.log("\n=== MODE 06 SELF-TESTS (end) ===")
-        files.log_lines(fmt_monitors(monitors_end))
+        files.log_lines(fmt_monitors(monitors_end) if monitors_end else ["  (the car had stopped answering)"])
         log.info("Saved %s and %s", files.csv_path, files.report_path)
         self.sink.on_status(
             "finished", "Session finished",
@@ -415,6 +432,13 @@ class Session:
         if self.files is None:
             raise RuntimeError("session files are not open")
         return self.files
+
+
+MIN_PLAUSIBLE_V = 6.0  # below this the car (or the adapter's power) is off; it is not a weak battery
+
+
+def _plausible_volts(value: Any) -> Optional[float]:
+    return float(value) if isinstance(value, (int, float)) and value >= MIN_PLAUSIBLE_V else None
 
 
 def _num(value: Any) -> Optional[float]:

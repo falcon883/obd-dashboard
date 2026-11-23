@@ -19,13 +19,14 @@ from serial.tools import list_ports
 
 from obd_dashboard import __version__
 from obd_dashboard.connection import link_info, open_connection
-from obd_dashboard.readers import SensorPlan, car_commands, plan_sensors, query, raw_text
+from obd_dashboard.readers import SensorPlan, car_commands, plan_sensors, query, raw_text, read_codes
 from obd_dashboard.vin import WMI_MAKES, model_year, normalize_vin
 
 SCHEMA = 1
 ISSUES_URL = "https://github.com/falcon883/obd-dashboard/issues/new/choose"
 NOTES = [
-    "Contains: app/Python/OS versions, adapter and protocol, the sensors the car lists and whether each answers.",
+    "Contains: app/Python/OS versions, adapter and protocol, the sensors the car lists and whether each answers, "
+    "and any trouble codes.",
     "Left out on purpose: the full VIN (only the 3-character maker code and model year), serial numbers, "
     "your location, and every logged value.",
 ]
@@ -81,6 +82,21 @@ def _supported(conn: Any, plan: SensorPlan) -> List[Dict[str, Any]]:
     return out
 
 
+def _freeze_frame_probe(conn: Any) -> Optional[Dict[str, Any]]:
+    """Ask for one freeze-frame value and keep the raw reply, to see why freeze frames come back empty."""
+    cmd = next((c for c in car_commands(conn) if c.mode == 2 and "PIDS_" not in c.name), None)
+    if cmd is None:
+        return None
+    response = query(conn, cmd)
+    raw: List[str] = []
+    for message in getattr(response, "messages", None) or []:
+        try:
+            raw.append(str(message.raw()))
+        except Exception:  # noqa: BLE001 - a diagnostic extra must never break the report
+            continue
+    return {"command": cmd.name, "answered": not response.is_null(), "raw": raw}
+
+
 def collect(conn: Any) -> Dict[str, Any]:
     """Everything we can say about the adapter and the car, from an open connection."""
     plan = plan_sensors(conn)
@@ -96,6 +112,8 @@ def collect(conn: Any) -> Dict[str, Any]:
             "adapter_voltage": voltage,
         },
         "vehicle": _vehicle(conn),
+        "codes": read_codes(conn),
+        "freeze_frame_probe": _freeze_frame_probe(conn),
         "supported": _supported(conn, plan),
         "monitors": [c.name for c in plan.monitors],
     }

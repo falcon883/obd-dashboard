@@ -4,10 +4,20 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Fixed
+- Crash on start with a real car ("'<' not supported between NoneType and int"): python-OBD lists its two adapter commands
+  among the car's supported commands, and they have no mode.
+- False battery alerts: "Charging low" in the first second after the engine starts, "Weak battery" while cranking, and
+  "Weak battery 0.0 V" at key-off. Battery alerts now need the problem to last 5 seconds, and readings below 6 V
+  (the engine computer winding down, or the adapter losing power) count as no reading.
+- The report no longer says "Codes at end: none" and "Mode 06 failures: none" when the car had simply stopped
+  answering at the end. It keeps the last known codes and test failures and says so.
+
 ### Added
-- `obd-dashboard support`: writes an anonymous JSON report (adapter, protocol, supported sensors) to attach to bug reports.
+- `obd-dashboard support`: writes an anonymous JSON report (adapter, protocol, supported sensors, trouble codes, a raw
+  freeze-frame probe) to attach to bug reports.
 - GPL-2.0-only license, contributing guide, security policy, issue and pull request templates, Dependabot.
-- README: screenshots, tested-on table, safety and privacy notes.
+- README: screenshots, tested-on table (two cars), safety and privacy notes.
 
 ## [1.0.0]
 

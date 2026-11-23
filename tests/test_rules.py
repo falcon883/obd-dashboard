@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from obd_dashboard.rules import RuleState, evaluate
+from obd_dashboard.rules import BATTERY_SUSTAIN_S, RuleState, evaluate
 
 
 def run(readings, state=None, now=0.0):
@@ -46,11 +46,38 @@ def test_warmup_alert_needs_driving_and_20_minutes():
     ],
 )
 def test_battery(rpm, volts, expected):
-    alerts = run({"RPM": rpm, "battery_v": volts})
+    state = RuleState()
+    readings = {"RPM": rpm, "battery_v": volts}
+    run(readings, state, now=0.0)
+    alerts = run(readings, state, now=BATTERY_SUSTAIN_S)
     if expected is None:
         assert "battery" not in alerts
     else:
         assert expected in alerts["battery"].msg
+
+
+def test_battery_alert_waits_until_the_problem_lasts():
+    """Real logs: 12.1 V in the first second after start and 11.0 V while cranking were not faults."""
+    state = RuleState()
+    sag = {"RPM": 1286.0, "battery_v": 12.1}
+    assert "battery" not in run(sag, state, now=0.0)
+    assert "battery" not in run(sag, state, now=BATTERY_SUSTAIN_S - 0.1)
+    assert "battery" in run(sag, state, now=BATTERY_SUSTAIN_S)
+
+
+def test_battery_dip_that_recovers_never_alerts_and_restarts_the_clock():
+    state = RuleState()
+    assert "battery" not in run({"RPM": 0.0, "battery_v": 11.0}, state, now=0.0)  # cranking
+    assert "battery" not in run({"RPM": 1441.0, "battery_v": 14.9}, state, now=1.0)  # running, charging
+    assert "battery" not in run({"RPM": 1441.0, "battery_v": 12.1}, state, now=2.0)  # a new problem starts here
+    assert "battery" not in run({"RPM": 1441.0, "battery_v": 12.1}, state, now=2.0 + BATTERY_SUSTAIN_S - 0.1)
+
+
+def test_a_different_battery_problem_restarts_the_clock():
+    state = RuleState()
+    run({"RPM": 800.0, "battery_v": 12.5}, state, now=0.0)  # charging low
+    assert "battery" not in run({"RPM": 800.0, "battery_v": 15.4}, state, now=BATTERY_SUSTAIN_S)  # now overcharging
+    assert "Overcharging" in run({"RPM": 800.0, "battery_v": 15.4}, state, now=2 * BATTERY_SUSTAIN_S)["battery"].msg
 
 
 def test_long_term_fuel_trim_direction_and_severity():

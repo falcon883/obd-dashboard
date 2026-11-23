@@ -66,6 +66,26 @@ def test_read_monitors_and_formatting():
     assert readers.fmt_monitors({}) == ["  (none reported)"]
 
 
+def test_read_monitors_skips_empty_replies():
+    """A car that is shutting down answers Mode 06 with a frame that holds no tests."""
+
+    class Conn:
+        def query(self, _cmd):
+            return R(Mon([]))
+
+    assert readers.read_monitors(Conn(), [C.MONITOR_EVAP_150]) == {}
+
+
+def test_read_codes_tells_no_codes_apart_from_no_answer():
+    assert readers.read_codes(FakeCar())["stored"] == []  # answered: nothing stored yet
+
+    class Silent:
+        def query(self, _cmd):
+            return obd.OBDResponse()
+
+    assert readers.read_codes(Silent()) is None
+
+
 def test_read_static_decodes_vin_and_counters_skip_text():
     car = FakeCar()
     static = readers.read_static(car, [C.VIN, C.FUEL_TYPE, C.WARMUPS_SINCE_DTC_CLEAR])

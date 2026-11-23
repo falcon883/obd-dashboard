@@ -67,13 +67,19 @@ def dtc_list(response: Any) -> List[str]:
     return [f"{code} {desc}".strip() for code, desc in response.value]
 
 
-def read_codes(conn: Any) -> Codes:
-    status = query(conn, C.STATUS)
-    mil = None if status.is_null() else bool(status.value.MIL)
+def read_codes(conn: Any) -> Optional[Codes]:
+    """MIL, stored and pending codes, or None if the car did not answer at all.
+
+    "No codes" is an answer (an empty list); a silent car (link lost, ignition off) is not, and must not
+    wipe out codes we already know about.
+    """
+    status, stored, pending = query(conn, C.STATUS), query(conn, C.GET_DTC), query(conn, C.GET_CURRENT_DTC)
+    if status.is_null() and stored.is_null() and pending.is_null():
+        return None
     return {
-        "mil": mil,
-        "stored": dtc_list(query(conn, C.GET_DTC)),
-        "pending": dtc_list(query(conn, C.GET_CURRENT_DTC)),
+        "mil": None if status.is_null() else bool(status.value.MIL),
+        "stored": dtc_list(stored),
+        "pending": dtc_list(pending),
     }
 
 
@@ -82,8 +88,11 @@ def read_monitors(conn: Any, cmds: Sequence[Any]) -> Dict[str, MonitorTests]:
     out: Dict[str, MonitorTests] = {}
     for cmd in cmds:
         response = query(conn, cmd)
-        if not response.is_null():
-            out[cmd.name] = [(t.desc, t.value, t.passed) for t in response.value.tests]
+        if response.is_null():
+            continue
+        tests = [(t.desc, t.value, t.passed) for t in response.value.tests]
+        if tests:  # a car that is shutting down can answer with an empty frame
+            out[cmd.name] = tests
     return out
 
 

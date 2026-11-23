@@ -185,8 +185,11 @@ def test_each_limit_changes_the_rule_it_belongs_to():
     assert "misfire" in evaluate({}, RuleState(misfire0=1.0, misfire={"total": 3.0}), 0.0, t)
     assert "ltft" in evaluate({"LONG_FUEL_TRIM_1": 6.0}, RuleState(), 0.0, t)
     low_charge = {"RPM": 700.0, "battery_v": 12.5}
-    assert "battery" in evaluate(low_charge, RuleState(), 0.0)  # 700 rpm counts as running by default
-    assert "battery" not in evaluate(low_charge, RuleState(), 0.0, t)  # ...but not with running_rpm=900
+    default_state, custom_state = RuleState(), RuleState()
+    evaluate(low_charge, default_state, 0.0)
+    evaluate(low_charge, custom_state, 0.0, t)
+    assert "battery" in evaluate(low_charge, default_state, 10.0)  # 700 rpm counts as running by default
+    assert "battery" not in evaluate(low_charge, custom_state, 10.0, t)  # ...but not with running_rpm=900
 
 
 def test_thermostat_check_uses_the_configured_minutes():

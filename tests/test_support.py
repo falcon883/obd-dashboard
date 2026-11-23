@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any, List
 
+import obd
 import pytest
 
 from obd_dashboard import cli, support
@@ -110,3 +111,37 @@ def test_adapter_commands_without_a_mode_do_not_break_the_report(tmp_path: Path)
     assert any(c.mode is None for c in car.supported_commands)
     _, report = _run(tmp_path, car)
     assert all(entry["name"] not in {"ELM_VERSION", "ELM_VOLTAGE"} for entry in report["supported"])
+
+
+def test_report_has_codes_and_a_freeze_frame_probe(tmp_path: Path) -> None:
+    _, report = _run(tmp_path, FakeCar())
+    assert set(report["codes"]) == {"mil", "stored", "pending"}
+    probe = report["freeze_frame_probe"]
+    assert probe is None or {"command", "answered", "raw"} <= set(probe)
+
+
+def test_probe_records_the_raw_reply_and_survives_a_bad_message() -> None:
+    class Msg:
+        def raw(self) -> str:
+            return "7E8 03 42 05 00"
+
+    class Broken:
+        def raw(self) -> str:
+            raise RuntimeError("no raw frame")
+
+    class Reply:
+        messages = [Msg(), Broken()]
+
+        def is_null(self) -> bool:
+            return False
+
+    class Car(FakeCar):
+        def __init__(self) -> None:
+            super().__init__()
+            self.supported_commands = set(self.supported_commands) | {obd.commands.DTC_COOLANT_TEMP}
+
+        def query(self, cmd: Any) -> Any:
+            return Reply() if cmd.mode == 2 else super().query(cmd)
+
+    probe = support._freeze_frame_probe(Car())
+    assert probe is not None and probe["answered"] is True and probe["raw"] == ["7E8 03 42 05 00"]

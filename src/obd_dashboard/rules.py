@@ -15,6 +15,9 @@ from obd_dashboard.userconfig import DEFAULT_THRESHOLDS, Thresholds
 Readings = Dict[str, object]
 Alerts = Dict[str, Alert]
 
+# Cranking and the first second after start dip the voltage for a moment. Only a reading that stays bad is a problem.
+BATTERY_SUSTAIN_S = 5.0
+
 
 @dataclass
 class RuleState:
@@ -28,6 +31,8 @@ class RuleState:
     mil: Optional[bool] = None
     stored: List[str] = field(default_factory=list)
     pending: List[str] = field(default_factory=list)
+    battery_kind: Optional[str] = None  # which battery problem is showing right now, if any
+    battery_since: float = 0.0  # monotonic seconds when that problem first showed
 
     @classmethod
     def for_limits(cls, t: Thresholds) -> RuleState:
@@ -62,17 +67,25 @@ def _coolant(r: Readings, s: RuleState, now: float, t: Thresholds) -> Alerts:
     return out
 
 
-def _battery(r: Readings, running: bool, t: Thresholds) -> Alerts:
+def _battery(r: Readings, running: bool, s: RuleState, now: float, t: Thresholds) -> Alerts:
     v = _num(r, "battery_v")
-    if v is None:
+    kind: Optional[str] = None
+    msg = ""
+    if v is not None:
+        if running and v < t.battery_low_running_v:
+            kind, msg = "low_running", f"Charging low: {v:.1f}V while running (alternator/belt/battery)"
+        elif running and v > t.battery_high_running_v:
+            kind, msg = "high_running", f"Overcharging: {v:.1f}V"
+        elif not running and v < t.battery_low_off_v:
+            kind, msg = "low_off", f"Weak battery: {v:.1f}V with engine off"
+    if kind is None:
+        s.battery_kind = None
         return {}
-    if running and v < t.battery_low_running_v:
-        return {"battery": Alert("WARN", f"Charging low: {v:.1f}V while running (alternator/belt/battery)")}
-    if running and v > t.battery_high_running_v:
-        return {"battery": Alert("WARN", f"Overcharging: {v:.1f}V")}
-    if not running and v < t.battery_low_off_v:
-        return {"battery": Alert("WARN", f"Weak battery: {v:.1f}V with engine off")}
-    return {}
+    if kind != s.battery_kind:
+        s.battery_kind, s.battery_since = kind, now
+    if now - s.battery_since < BATTERY_SUSTAIN_S:
+        return {}
+    return {"battery": Alert("WARN", msg)}
 
 
 def _fuel_trim(r: Readings, s: RuleState, t: Thresholds) -> Alerts:
@@ -138,7 +151,7 @@ def evaluate(readings: Readings, state: RuleState, now: float, limits: Threshold
     running = rpm is not None and rpm > limits.running_rpm
     checks: Tuple[Alerts, ...] = (
         _coolant(readings, state, now, limits),
-        _battery(readings, running, limits),
+        _battery(readings, running, state, now, limits),
         _fuel_trim(readings, state, limits),
         _idle(readings, running, limits),
         _catalyst(readings, limits),

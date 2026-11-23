@@ -121,6 +121,7 @@ class SummaryData:
     stats: Mapping[str, Stat]
     static_start: Mapping[str, Any] = field(default_factory=dict)
     static_end: Mapping[str, Any] = field(default_factory=dict)
+    end_answered: bool = True  # False when the car had stopped answering by the end (ignition off, link lost)
 
 
 def render_summary(d: SummaryData) -> List[str]:
@@ -135,9 +136,11 @@ def render_summary(d: SummaryData) -> List[str]:
         f"Duration {d.duration_s / 60:.1f} min | {d.loops} rows | avg {d.duration_s / max(d.loops, 1):.2f} s/row",
         f"Coolant warm-up: start {start}, reached {reached}",
         f"Codes at end: stored {d.end_codes.get('stored') or 'none'} | "
-        f"pending {d.end_codes.get('pending') or 'none'} | MIL {d.end_codes.get('mil')}",
+        f"pending {d.end_codes.get('pending') or 'none'} | MIL {d.end_codes.get('mil')}"
+        + ("" if d.end_answered else "  (last known: the car had stopped answering)"),
         f"Misfire counters: start {d.misfire_start} -> end {d.misfire_end}",
-        "Mode 06 failures at end: " + ("; ".join(d.monitor_failures) if d.monitor_failures else "none"),
+        ("Mode 06 failures at end: " if d.end_answered else "Mode 06 failures (last known, car stopped answering): ")
+        + ("; ".join(d.monitor_failures) if d.monitor_failures else "none"),
         "Alerts raised: " + (" | ".join(d.alerts_raised) if d.alerts_raised else "none"),
         "",
         f"{'sensor':<28}{'unit':<22}{'min':>10}{'avg':>10}{'max':>10}",
