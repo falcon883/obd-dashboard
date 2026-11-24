@@ -1278,7 +1278,8 @@ button {
 .sum-hero.warn {
   border-left-color: var(--warn);
 }
-.sum-hero.crit {
+.sum-hero.crit,
+.sum-hero.bad {
   border-left-color: var(--bad);
 }
 .sum-icon svg {
@@ -1365,4 +1366,35 @@ button {
 
 .sum-meta {
   margin: 2px 0 0;
+}
+
+/* Used-car check */
+.start-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.start-check > div {
+  flex: 1 1 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.92rem;
+}
+.start-check .muted {
+  font-size: 0.85rem;
+}
+.finding-detail {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.check-caveat {
+  margin: 2px 4px 0;
+  line-height: 1.5;
 }

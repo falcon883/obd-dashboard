@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from obd_dashboard.outcome import DriveTally
 from obd_dashboard.types import Sink
+from obd_dashboard.usedcar import assess
 from obd_dashboard.userconfig import DEFAULT_THRESHOLDS, Thresholds
 
 # (name, description, unit, polled every loop)
@@ -166,3 +167,35 @@ def run_demo(
             ),
         },
     )  # fmt: skip
+
+
+# A car that looks fine at a glance but had its fault memory wiped a few km ago: the case the check exists for.
+DEMO_CHECK_SNAPSHOT: Dict[str, Any] = {
+    "vin": "DEMO0000000000000", "car": "2014 Demo Sedan 2.4 L 4-cyl", "calibration": None,
+    "codes": {"mil": False, "stored": [], "pending": []},
+    "readiness": [
+        {"name": "MISFIRE_MONITORING", "available": True, "complete": True},
+        {"name": "FUEL_SYSTEM_MONITORING", "available": True, "complete": True},
+        {"name": "CATALYST_MONITORING", "available": True, "complete": False},
+        {"name": "EVAPORATIVE_SYSTEM_MONITORING", "available": True, "complete": False},
+        {"name": "OXYGEN_SENSOR_MONITORING", "available": True, "complete": False},
+    ],
+    "since_clear": {"distance_km": 23.0, "warmups": 2.0, "minutes": 95.0},
+    "mil_km": None, "mil_minutes": None, "monitors_read": True, "monitors_failed": [], "misfire_total": 0.0,
+    "idle": {
+        "samples": 80, "running": True, "moving": False, "rpm_min": 742.0, "rpm_max": 768.0, "rpm_mean": 755.0,
+        "ltft": 2.4, "stft": 1.1, "volts_off": 12.5, "volts_run": 14.2, "coolant_start": 86.0, "coolant_end": 90.0,
+    },
+}  # fmt: skip
+
+
+def run_demo_check(
+    sink: Sink, stop: threading.Event, limits: Thresholds = DEFAULT_THRESHOLDS, tick: float = 1.0
+) -> None:
+    sink.on_status("checking", "Reading the car's records...")
+    for left in range(5, 0, -1):
+        if stop.wait(tick):
+            break
+        sink.on_status("checking", f"Listening to the engine... {left} s left")
+    check = {**assess(DEMO_CHECK_SNAPSHOT, limits), "snapshot": DEMO_CHECK_SNAPSHOT, "files": {}, "demo": True}
+    sink.on_status("finished", "Check finished", {"csv": None, "report": None, "summary": [], "check": check})

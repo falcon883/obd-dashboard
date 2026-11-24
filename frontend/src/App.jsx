@@ -3,10 +3,12 @@ import useObdStream from './hooks/useObdStream.js'
 import { api } from './api.js'
 import { COLORS, carLine, fmt, fmtDuration, limitsOf, makeUnits } from './format.js'
 import { streamRate } from './summary.js'
+import { secondsLeft } from './check.js'
 import Gauge from './components/Gauge.jsx'
 import LineChart from './components/LineChart.jsx'
 import Garage from './components/Garage.jsx'
 import History from './components/History.jsx'
+import CheckResult from './components/CheckResult.jsx'
 import SessionSummary from './components/SessionSummary.jsx'
 import Settings from './components/Settings.jsx'
 import StartCard from './components/StartCard.jsx'
@@ -22,7 +24,7 @@ import {
   overallStatus,
 } from './components/Panels.jsx'
 
-const RUNNING = ['connecting', 'connected', 'lost']
+const RUNNING = ['connecting', 'connected', 'lost', 'checking']
 const WINDOWS = [
   [120, '2 min'],
   [300, '5 min'],
@@ -42,6 +44,7 @@ function StatusPill({ status, serverUp }) {
   let text = 'Idle'
   if (serverUp === false) ((cls = 'bad'), (text = 'Server offline'))
   else if (status.state === 'connecting') ((cls = 'warn pulse'), (text = 'Connecting…'))
+  else if (status.state === 'checking') ((cls = 'warn pulse'), (text = 'Checking…'))
   else if (status.state === 'connected') ((cls = 'ok pulse'), (text = 'Live'))
   else if (status.state === 'lost') ((cls = 'warn pulse'), (text = 'Reconnecting…'))
   else if (status.state === 'error') ((cls = 'bad'), (text = 'Error'))
@@ -58,6 +61,7 @@ export default function App() {
   const { serverUp, status, info, rows, last, events } = useObdStream()
   const [sys, setSys] = useState(loadUnits)
   const [win, setWin] = useState(120)
+  const [seenCheck, setSeenCheck] = useState(null) // the finished check the user has closed
   const [view, setView] = useState('dashboard') // 'dashboard' | 'history' | 'settings'
   const U = useMemo(() => makeUnits(sys), [sys])
   const L = useMemo(() => limitsOf(info), [info])
@@ -98,8 +102,10 @@ export default function App() {
 
   const showStart = !running
   const hasData = !!last
+  const checkMode = status.mode === 'check' // a used-car check has no live dashboard
   const showSummary = status.state === 'finished' && !!status.result?.outcome
-  const showLive = running || (hasData && !showSummary)
+  const showCheck = status.state === 'finished' && !!status.result?.check && seenCheck !== status.result
+  const showLive = !checkMode && (running || (hasData && !showSummary))
   const rate = running ? streamRate(rows) : null
 
   return (
@@ -194,7 +200,7 @@ export default function App() {
           </button>
           {running && (
             <button className="btn danger" onClick={() => api.stop()}>
-              Stop
+              {checkMode ? 'Cancel' : 'Stop'}
             </button>
           )}
         </div>
@@ -207,9 +213,10 @@ export default function App() {
         </div>
       )}
       {status.state === 'lost' && <div className="banner warn">{status.message}</div>}
-      {status.state === 'connecting' && (
+      {(status.state === 'connecting' || status.state === 'checking') && (
         <div className="banner info">
           <span className="spin" /> {status.message}
+          {secondsLeft(status.message) != null && <span className="muted"> Keep the engine idling.</span>}
         </div>
       )}
 
@@ -218,8 +225,11 @@ export default function App() {
       {view === 'dashboard' && showSummary && (
         <SessionSummary status={status} info={info} rows={rows} U={U} onHistory={() => setView('history')} />
       )}
-      {view === 'dashboard' && showStart && <StartCard status={status} serverUp={serverUp} />}
-      {view === 'dashboard' && showStart && <Garage serverUp={serverUp} status={status} />}
+      {view === 'dashboard' && showCheck && (
+        <CheckResult status={status} onAgain={() => setSeenCheck(status.result)} />
+      )}
+      {view === 'dashboard' && showStart && !showCheck && <StartCard status={status} serverUp={serverUp} />}
+      {view === 'dashboard' && showStart && !showCheck && <Garage serverUp={serverUp} status={status} />}
       {view === 'dashboard' && hasData && !showSummary && <AlertBanner last={last} />}
 
       {view === 'dashboard' && showLive && (

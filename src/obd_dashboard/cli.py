@@ -1,4 +1,4 @@
-"""Command line: `obd-dashboard` (web UI), `log` (terminal only), `garage`, `support`, `test`, `ports`."""
+"""Command line: `obd-dashboard` (web UI), `log` (terminal only), `garage`, `support`, `check`, `test`, `ports`."""
 
 from __future__ import annotations
 
@@ -7,12 +7,12 @@ import logging
 import signal
 import threading
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from obd_dashboard import __version__
 from obd_dashboard.settings import Settings
 
-COMMANDS = {"serve", "log", "test", "ports", "garage", "support"}
+COMMANDS = {"serve", "log", "test", "ports", "garage", "support", "check"}
 
 
 def _session_args(p: argparse.ArgumentParser) -> None:
@@ -59,6 +59,13 @@ def build_parser() -> argparse.ArgumentParser:
     support.add_argument("--com", default=None)
     support.add_argument("--baud", type=int, default=0)
     support.add_argument("--out", type=Path, default=None, help="file to write (default: obd-support-<time>.json)")
+
+    check = sub.add_parser(
+        "check", parents=[common], help="used-car check: read a car you are thinking of buying and print findings"
+    )
+    _session_args(check)
+    check.add_argument("--seconds", type=float, default=20.0, help="how long to listen to the engine (default 20)")
+    check.add_argument("--no-vin-lookup", action="store_true", help="never contact NHTSA to name the car")
 
     sub.add_parser("ports", parents=[common], help="list serial ports")
     return ap
@@ -134,6 +141,31 @@ def _garage(a: argparse.Namespace) -> int:
     return 0
 
 
+def _check(a: argparse.Namespace) -> int:
+    from obd_dashboard.checkrun import run_check
+    from obd_dashboard.types import BaseSink
+
+    class Printer(BaseSink):
+        def on_status(self, state: str, message: str, result: Optional[Dict[str, Any]] = None) -> None:
+            if state == "finished" and result and "check" in result:
+                check = result["check"]
+                print(f"\n{check['headline'].upper()}\n")
+                for f in check["findings"]:
+                    print(f"  [{f['level']:<4}] {f['title']}" + (f"\n         {f['detail']}" if f["detail"] else ""))
+                print(f"\n{check['caveat']}")
+                print(f"\nSaved: {a.output_dir / 'checks' / check['files']['report']}")
+            elif state == "checking":
+                print(f"\r{message:<52}", end="", flush=True)
+            elif state in ("connecting", "error"):
+                print(message)
+
+    settings = Settings(com=a.com, baud=a.baud, output_dir=a.output_dir, lookup_vin=not a.no_vin_lookup)
+    print("Make sure the ignition is on. For the full check, start the engine and let it idle.")
+    stop = threading.Event()
+    signal.signal(signal.SIGINT, lambda *_: stop.set())
+    return 0 if run_check(settings, Printer(), stop, seconds=a.seconds) is not None else 1
+
+
 def _ports(_a: argparse.Namespace) -> int:
     from serial.tools import list_ports
 
@@ -157,5 +189,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         format="%(asctime)s %(levelname)-7s %(message)s", datefmt="%H:%M:%S",
     )  # fmt: skip
     logging.getLogger("pint").setLevel(logging.ERROR)  # python-obd's unit library is noisy on import
-    handlers = {"serve": _serve, "log": _log, "test": _test, "ports": _ports, "garage": _garage, "support": _support}
+    handlers = {
+        "serve": _serve,
+        "log": _log,
+        "test": _test,
+        "ports": _ports,
+        "garage": _garage,
+        "support": _support,
+        "check": _check,
+    }
     return handlers[parsed.command or "serve"](parsed)

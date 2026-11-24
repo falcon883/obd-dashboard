@@ -10,7 +10,8 @@ from collections import deque
 from dataclasses import replace
 from typing import Any, Callable, Deque, Dict, Optional, Set
 
-from obd_dashboard.demo import run_demo
+from obd_dashboard.checkrun import run_check
+from obd_dashboard.demo import run_demo, run_demo_check
 from obd_dashboard.session import Session
 from obd_dashboard.settings import Settings
 from obd_dashboard.types import BaseSink, EventPayload, RowPayload
@@ -35,9 +36,15 @@ class SessionBusy(RuntimeError):
 class Hub(BaseSink):
     """Implements `Sink`. The logger thread calls on_*; browsers subscribe on the asyncio loop."""
 
-    def __init__(self, settings: Settings, session_factory: Callable[..., Any] = Session) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        session_factory: Callable[..., Any] = Session,
+        check_runner: Callable[..., Any] = run_check,
+    ) -> None:
         self.settings = settings
         self._session_factory = session_factory
+        self._check_runner = check_runner
         self._lock = threading.Lock()  # guards the state below (written by the logger thread)
         self._history: Deque[Dict[str, Any]] = deque(maxlen=HISTORY_ROWS)
         self._events: Deque[EventPayload] = deque(maxlen=EVENT_ROWS)
@@ -45,6 +52,7 @@ class Hub(BaseSink):
         self._info: Optional[Dict[str, Any]] = None
         self._last: Optional[RowPayload] = None
         self._demo = False
+        self._mode = "drive"
         self._thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -106,7 +114,7 @@ class Hub(BaseSink):
         self._broadcast("alert", event)
 
     def on_status(self, state: str, message: str, result: Optional[Dict[str, Any]] = None) -> None:
-        status: Dict[str, Any] = {"state": state, "message": message}
+        status: Dict[str, Any] = {"state": state, "message": message, "mode": self._mode}
         if result is not None:
             status["result"] = result
         with self._lock:
@@ -120,7 +128,8 @@ class Hub(BaseSink):
         self._broadcast("info", info)
 
     # ---- session control ---------------------------------------------------------
-    def start(self, port: Optional[str] = None, baud: int = 0, demo: bool = False) -> None:
+    def start(self, port: Optional[str] = None, baud: int = 0, demo: bool = False, mode: str = "drive") -> None:
+        """Begin a drive session, or with mode="check" a used-car check (a short, one-off read)."""
         with self._lock:
             if self.running:
                 raise SessionBusy("A session is already running")
@@ -128,10 +137,11 @@ class Hub(BaseSink):
             self._events.clear()
             self._info = self._last = None
             self._demo = demo
+            self._mode = mode
             self._stop = threading.Event()
             cfg = replace(self.settings, com=port or self.settings.com, baud=baud)
             self._thread = threading.Thread(
-                target=self._run, args=(cfg, demo, self._stop), name="obd-session", daemon=True
+                target=self._run, args=(cfg, demo, self._stop, mode), name="obd-session", daemon=True
             )
             self._thread.start()
 
@@ -142,9 +152,14 @@ class Hub(BaseSink):
         if self._thread is not None:
             self._thread.join(timeout)
 
-    def _run(self, cfg: Settings, demo: bool, stop: threading.Event) -> None:
+    def _run(self, cfg: Settings, demo: bool, stop: threading.Event, mode: str = "drive") -> None:
         try:
-            if demo:
+            if mode == "check":
+                if demo:
+                    run_demo_check(self, stop, limits=UserConfig(cfg.output_dir).thresholds())
+                else:
+                    self._check_runner(cfg, self, stop)
+            elif demo:
                 run_demo(self, stop, limits=UserConfig(cfg.output_dir).thresholds())
             else:
                 self._session_factory(cfg, self, stop).run()
@@ -153,4 +168,7 @@ class Hub(BaseSink):
             self.on_status("error", f"{type(exc).__name__}: {exc}")
         finally:
             if self._status["state"] not in ("error", "finished"):
-                self.on_status("finished", "Session finished", {"csv": None, "report": None, "summary": []})
+                if mode == "check":  # cancelled before there was anything to report
+                    self.on_status("idle", "Check cancelled")
+                else:
+                    self.on_status("finished", "Session finished", {"csv": None, "report": None, "summary": []})

@@ -23,11 +23,11 @@ export default function StartCard({ status, serverUp }) {
     if (serverUp) refresh()
   }, [serverUp])
 
-  const start = async (demo) => {
+  const start = async (demo, mode = 'drive') => {
     setBusy(true)
     setErr('')
     try {
-      const r = await api.start({ port: port || null, baud: baud ? Number(baud) : 0, demo })
+      const r = await api.start({ port: port || null, baud: baud ? Number(baud) : 0, demo, mode })
       if (!r.ok) setErr(r.message || 'Could not start')
     } catch {
       setErr('Could not reach the dashboard server')
@@ -82,6 +82,25 @@ export default function StartCard({ status, serverUp }) {
         </button>
         <button className="btn" disabled={busy || !serverUp} onClick={() => start(true)}>
           Try the demo
+        </button>
+      </div>
+      <div className="start-check">
+        <div>
+          <b>Looking at a car to buy?</b>
+          <span className="muted">
+            A 20-second read-only check of fault codes, reset history and engine health.
+          </span>
+        </div>
+        <button className="btn" disabled={busy || !serverUp} onClick={() => start(false, 'check')}>
+          Used-car check
+        </button>
+        <button
+          className="btn ghost"
+          disabled={busy || !serverUp}
+          onClick={() => start(true, 'check')}
+          title="See what the result screen looks like, no car needed"
+        >
+          See an example
         </button>
       </div>
     </div>

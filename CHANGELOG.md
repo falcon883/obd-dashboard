@@ -18,6 +18,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
   Not yet confirmed on a real car.
 
 ### Changed
+- A serious verdict on the finished-drive screen now gets its red edge (the style name did not match).
 - Faster polling. The old loop waited a fixed second per row, and python-OBD's "fast" mode was off. Now the adapter
   answers as soon as the car has replied (switched on after the careful start-up, and it turns itself off if the first
   readings fail), rows come as fast as the adapter allows (at least 0.25 s apart, adjustable), and the sensors are
@@ -30,6 +31,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
   what happened, charts of the drive, report and CSV links) instead of the frozen dashboard.
 
 ### Added
+- Used-car check (button on the start screen, `obd-dashboard check`, `POST /api/start` with `mode: "check"`): a 20-second
+  read-only check for a car you are thinking of buying. Reports the check-engine light and codes, how recently the fault
+  memory was cleared and whether the follow-up self-tests have finished, check-engine-light history, out-of-range
+  self-tests, fuel trim, battery and charging voltage, idle and coolant, and gives a three-level verdict. The report is
+  saved in `logs/checks/` and the car is not added to the garage.
 - `obd-dashboard support`: writes an anonymous JSON report (adapter, protocol, supported sensors, trouble codes, a raw
   freeze-frame probe, tried both with and without the frame number) to attach to bug reports.
 - History screen: one point per drive for warm-up time, hottest coolant, charging voltage, long-term fuel trim and warm

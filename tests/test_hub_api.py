@@ -301,3 +301,59 @@ def test_replayed_history_is_trimmed_by_time_and_carries_only_chart_values():
     assert history[-1]["t"] - history[0]["t"] <= hub_module.HISTORY_SECONDS
     assert len(history) <= hub_module.HISTORY_ROWS
     assert history[0]["v"] == {"RPM": 800.0, "battery_v": 14.1}  # INTAKE_TEMP is only in `last`
+
+
+# ---- used-car check ---------------------------------------------------------------
+def test_hub_runs_a_check_instead_of_a_drive(settings):
+    calls = []
+
+    def fake_check(cfg, sink, stop):
+        calls.append(cfg.com)
+        sink.on_status("finished", "Check finished", {"check": {"verdict": "clear"}})
+
+    hub = Hub(
+        settings, session_factory=lambda *a: pytest.fail("a drive session must not start"), check_runner=fake_check
+    )
+    hub.start(port="COM9", mode="check")
+    assert wait_for(lambda: hub.snapshot()["status"]["state"] == "finished")
+    assert calls == ["COM9"] and hub.snapshot()["status"]["result"]["check"]["verdict"] == "clear"
+
+
+def test_cancelled_check_goes_back_to_idle_not_to_a_drive_summary(settings):
+    def slow_check(cfg, sink, stop):
+        sink.on_status("checking", "Listening...")
+        stop.wait(5)
+
+    hub = Hub(settings, check_runner=slow_check)
+    hub.start(mode="check")
+    assert wait_for(lambda: hub.snapshot()["status"]["state"] == "checking")
+    hub.end()
+    hub.join(3)
+    assert hub.snapshot()["status"] == {"state": "idle", "message": "Check cancelled", "mode": "check"}
+
+
+def test_demo_check_through_the_api_and_its_files(client, hub, monkeypatch):
+    import functools
+
+    from obd_dashboard import hub as hub_module
+
+    monkeypatch.setattr(hub_module, "run_demo_check", functools.partial(hub_module.run_demo_check, tick=0.01))
+    assert client.post("/api/start", json={"demo": True, "mode": "check"}).status_code == 200
+    assert wait_for(lambda: hub.snapshot()["status"]["state"] == "finished", timeout=5)
+    check = client.get("/api/state").json()["status"]["result"]["check"]
+    assert check["verdict"] == "flags" and check["files"] == {} and check["findings"] and check["demo"] is True
+
+
+def test_start_rejects_an_unknown_mode(client):
+    assert client.post("/api/start", json={"mode": "race"}).status_code == 422
+
+
+def test_check_downloads_serve_only_real_check_files(client, settings):
+    folder = settings.output_dir / "checks"
+    folder.mkdir(parents=True)
+    (folder / "20260102_030405_check.txt").write_text("report text")
+    (settings.output_dir / "secret.txt").write_text("nope")
+    ok = client.get("/api/checks/20260102_030405_check.txt")
+    assert ok.status_code == 200 and ok.text == "report text"
+    for bad in ("secret.txt", "..%2Fsecret.txt", "20260102_030405_check.exe", "20260102_999999_check.txt"):
+        assert client.get(f"/api/checks/{bad}").status_code == 404

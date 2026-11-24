@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from serial.tools import list_ports
 
+from obd_dashboard.checkrun import check_file
 from obd_dashboard.garage import Garage
 from obd_dashboard.history import History
 from obd_dashboard.hub import Hub, SessionBusy
@@ -34,6 +35,7 @@ class StartRequest(BaseModel):
     port: Optional[str] = Field(default=None, max_length=64, pattern=r"^[A-Za-z0-9_./-]+$")
     baud: int = Field(default=0, ge=0, le=2_000_000, description="0 = auto-detect")
     demo: bool = False
+    mode: str = Field(default="drive", pattern=r"^(drive|check)$")
 
 
 class Ack(BaseModel):
@@ -110,7 +112,7 @@ def create_app(settings: Settings, hub: Optional[Hub] = None) -> FastAPI:
     @app.post("/api/start", response_model=Ack)
     def start(req: StartRequest) -> Ack:
         try:
-            hub.start(port=req.port, baud=req.baud, demo=req.demo)
+            hub.start(port=req.port, baud=req.baud, demo=req.demo, mode=req.mode)
         except SessionBusy as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return Ack(message="started")
@@ -136,6 +138,13 @@ def create_app(settings: Settings, hub: Optional[Hub] = None) -> FastAPI:
     @app.get("/api/garage/{vin}/{name}")
     def garage_file(vin: str, name: str) -> FileResponse:
         path = garage.file_path(vin, name)  # validated: known car folder + known file-name shape only
+        if path is None:
+            raise HTTPException(status_code=404, detail="No such file")
+        return FileResponse(path, filename=name)
+
+    @app.get("/api/checks/{name}")
+    def check_download(name: str) -> FileResponse:
+        path = check_file(settings.output_dir, name)  # only the exact file names a check writes
         if path is None:
             raise HTTPException(status_code=404, detail="No such file")
         return FileResponse(path, filename=name)

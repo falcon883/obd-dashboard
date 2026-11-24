@@ -49,6 +49,7 @@ That is all (restart `obd-dashboard` if it is running). If a release adds a new 
 | `obd-dashboard log` | terminal only: live status line + files, Ctrl+C to finish |
 | `obd-dashboard test` | raw adapter test (prints the ELM327's replies) |
 | `obd-dashboard ports` | list serial ports |
+| `obd-dashboard check` | used-car check: read a car you might buy and print what looks wrong (`--seconds 20`) |
 | `obd-dashboard support` | write an anonymous adapter/car report to attach to a bug report |
 
 Other flags: `--no-beep`, `--no-vin-lookup`, `--output-dir logs`, `--no-browser`, `-v` (debug log).
@@ -106,6 +107,26 @@ coolant, charging voltage, long-term fuel trim and warm idle speed. The shaded b
 as normal. Below the charts is a table of every drive with its report and CSV. Everything is worked out from the CSV logs
 you already have, so older drives appear too. Logs under a minute are listed but left out of the charts.
 
+## Used-car check
+
+Looking at a car to buy? Plug the adapter in, turn the ignition on (ideally start the engine and let it idle), and press
+**Used-car check** on the start screen, or run `obd-dashboard check`. It takes about 20 seconds and changes nothing on
+the car. You get a verdict (*Nothing worrying found*, *Worth a closer look* or *Serious flags*) and a short list of what
+to ask the seller about:
+
+- the check-engine light, stored and pending trouble codes
+- **recently cleared codes**: how far the car has been driven (and how many warm-ups) since the fault memory was wiped,
+  and whether the self-tests that run afterwards (catalyst, evaporative system, oxygen sensors) have finished. Codes
+  wiped just before a sale leave exactly this trace
+- how long the check-engine light has been on, and out-of-range on-board self-test results
+- a live sample: long-term fuel trim, battery voltage with the engine off and charging voltage with it running, idle
+  steadiness, and coolant temperature while parked
+
+The VIN and car name are shown so you can compare them with the listing. The report is saved in `logs/checks/` (a car
+you are only looking at is not added to your garage). It reads the engine computer only: not the transmission, brakes,
+airbags, body or rust, so it is one more input and not a replacement for a mechanic. **See an example** shows the result
+screen with a simulated car.
+
 ## Settings
 
 ![Settings screen](docs/screenshots/settings.png)
@@ -133,6 +154,8 @@ defaults in a future update still reach you), and each report starts with the li
       garage.py      per-car folders, profiles, safe downloads
       history.py     per-drive numbers from the CSV logs (trends)
       outcome.py     the end-of-drive summary numbers
+      usedcar.py     used-car check rules (pure: snapshot in, findings and verdict out)
+      checkrun.py    runs the check: records, 20 s engine sample, report files
       vin.py         VIN -> year/make offline, model/engine via NHTSA
       report.py      CSV columns, report file, end-of-run summary
       session.py     the logging session (connect -> baseline -> loop -> summary)
