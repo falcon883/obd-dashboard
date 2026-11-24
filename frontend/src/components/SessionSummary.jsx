@@ -63,6 +63,7 @@ export default function SessionSummary({ status, info, rows, U, onHistory }) {
   const csv = fileName(result.csv)
   const when = info?.car ? info.car.display_name : null
   const tiles = outcomeTiles(o, U)
+  const moved = rows.some((r) => r.v.SPEED > 0) // a flat speed chart for a parked car says nothing
   const span = rows.length > 1 ? Math.max(10, Math.ceil(rows[rows.length - 1].t - rows[0].t)) : 0
 
   return (
@@ -103,29 +104,28 @@ export default function SessionSummary({ status, info, rows, U, onHistory }) {
         ))}
       </div>
 
-      <div className="sum-grid">
-        <WhatHappened o={o} />
-        {span > 0 && (
-          <div className="sum-charts">
-            <LineChart
-              title="Coolant temperature"
-              unit={U.temp}
-              rows={rows}
-              windowSec={span}
-              thresholds={[{ y: U.t(info?.thresholds?.coolant_warn_c ?? 102), color: COLORS.warn }]}
-              series={[{ label: 'Coolant', color: COLORS.orange, get: (v) => U.t(v.COOLANT_TEMP) }]}
-            />
-            <LineChart
-              title="Vehicle speed"
-              unit={U.speed}
-              rows={rows}
-              windowSec={span}
-              yMin={0}
-              series={[{ label: 'Speed', color: COLORS.violet, get: (v) => U.s(v.SPEED) }]}
-            />
-          </div>
-        )}
-      </div>
+      <WhatHappened o={o} />
+
+      {span > 0 && (
+        <LineChart
+          title="Coolant temperature"
+          unit={U.temp}
+          rows={rows}
+          windowSec={span}
+          thresholds={[{ y: U.t(info?.thresholds?.coolant_warn_c ?? 102), color: COLORS.warn }]}
+          series={[{ label: 'Coolant', color: COLORS.orange, get: (v) => U.t(v.COOLANT_TEMP) }]}
+        />
+      )}
+      {span > 0 && moved && (
+        <LineChart
+          title="Vehicle speed"
+          unit={U.speed}
+          rows={rows}
+          windowSec={span}
+          yMin={0}
+          series={[{ label: 'Speed', color: COLORS.violet, get: (v) => U.s(v.SPEED) }]}
+        />
+      )}
 
       {result.summary?.length > 0 && !o.demo && (
         <details className="card sum-raw">
